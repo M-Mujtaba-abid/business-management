@@ -1,0 +1,48 @@
+// // This is your Prisma schema file,
+// // learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// generator client {
+//   provider = "prisma-client-js"
+// }
+
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+// model Sale {
+//   id        String     @id @default(cuid())
+//   productName String
+//   customerName String
+//   address   String
+//   cost      Float
+//   soldPrice Float
+//   profit    Float
+//   createdAt DateTime  @default(now())
+//   updatedAt DateTime  @updatedAt
+
+//   @@index([createdAt])
+// }
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url wali line yahan se delete kar di hai
+}
+
+model Sale {
+  id          String   @id @default(cuid())
+  productName String
+  customerName String
+  address     String
+  cost        Float
+  soldPrice   Float
+  profit      Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+}

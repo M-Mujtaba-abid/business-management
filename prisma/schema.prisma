@@ -30,6 +30,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
   // url wali line yahan se delete kar di hai
 }
 

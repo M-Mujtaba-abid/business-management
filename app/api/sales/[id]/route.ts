@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest, // <--- TypeScript error se bachne ke liye underscore (_) lagaya hai
   { params }: { params: { id: string } }
 ) {
   try {

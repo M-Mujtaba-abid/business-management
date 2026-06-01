@@ -220,12 +220,14 @@ export default function SaleForm({ onSubmit, isLoading, editData }: FormProps) {
             name="cost"
             value={formData.cost}
             onChange={handleChange}
-            placeholder="0.00"
-            step="1"
+            // --- Prevent value adjustments when scrolling ---
+            onWheel={(e) => (e.target as HTMLInputElement).blur()}
+            placeholder="0"
             min="0"
-            className={`px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-              errors.cost ? "border-red-500" : "border-gray-300"
-            }`}
+            className={`px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition 
+    [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+      errors.cost ? "border-red-500" : "border-gray-300"
+    }`}
           />
           {errors.cost && (
             <span className="text-red-500 text-sm mt-1">{errors.cost}</span>
@@ -246,12 +248,14 @@ export default function SaleForm({ onSubmit, isLoading, editData }: FormProps) {
             name="soldPrice"
             value={formData.soldPrice}
             onChange={handleChange}
+            // --- Prevent value adjustments when scrolling ---
+            onWheel={(e) => (e.target as HTMLInputElement).blur()}
             placeholder="0"
-            step="1"
             min="0"
-            className={`px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${
-              errors.soldPrice ? "border-red-500" : "border-gray-300"
-            }`}
+            className={`px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition 
+    [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+      errors.soldPrice ? "border-red-500" : "border-gray-300"
+    }`}
           />
           {errors.soldPrice && (
             <span className="text-red-500 text-sm mt-1">

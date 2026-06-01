@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Sale" ADD COLUMN     "profitHolder" TEXT,
+ALTER COLUMN "customerName" DROP NOT NULL,
+ALTER COLUMN "address" DROP NOT NULL,
+ALTER COLUMN "createdAt" DROP DEFAULT;

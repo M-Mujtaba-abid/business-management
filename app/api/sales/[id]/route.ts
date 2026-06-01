@@ -21,19 +21,16 @@ export async function PUT(
       createdAt,
     } = body;
 
-    // Parse incoming data to match database schemas
     const parsedCost = parseFloat(cost) || 0;
     const parsedSoldPrice = parseFloat(soldPrice) || 0;
     const calculatedProfit = parsedSoldPrice - parsedCost;
-
-    // Ensure the date is parsed correctly into an ISO Date string format
     const schemaDate = createdAt ? new Date(createdAt) : new Date();
 
     const updatedSale = await prisma.sale.update({
       where: { id: id },
       data: {
         productName,
-        customerName: customerName || null, // Safeguard empty string optionals
+        customerName: customerName || null,
         address: address || null,
         cost: parsedCost,
         soldPrice: parsedSoldPrice,
@@ -55,7 +52,7 @@ export async function PUT(
 
 // --- DELETE: Remove a sale record ---
 export async function DELETE(
-  request: Request,
+  _request: Request, // <-- Added underscore here to satisfy TypeScript unread rules
   { params }: { params: { id: string } },
 ) {
   try {

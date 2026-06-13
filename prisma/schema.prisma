@@ -21,3 +21,13 @@ model Sale {
 
   @@index([createdAt])
 }
+
+model Expense {
+  id          String   @id @default(cuid())
+  description String
+  amount      Float
+  paidBy      String   // "Noman", "Mujtaba", or "Shared"
+  createdAt   DateTime @default(now())
+  
+  @@index([createdAt])
+}

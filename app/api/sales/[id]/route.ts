@@ -1,9 +1,52 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "../../../lib/prisma";
 
 // --- PUT: Update an existing sale record ---
+// export async function PUT(
+//   request: Request,
+//   { params }: { params: { id: string } },
+// ) {
+//   try {
+//     const { id } = params;
+//     const body = await request.json();
+//     const {
+//       productName,
+//       customerName,
+//       address,
+//       cost,
+//       soldPrice,
+//       profitHolder,
+//       createdAt,
+//     } = body;
+
+//     const parsedCost = parseFloat(cost) || 0;
+//     const parsedSoldPrice = parseFloat(soldPrice) || 0;
+//     const calculatedProfit = parsedSoldPrice - parsedCost;
+//     const schemaDate = createdAt ? new Date(createdAt) : new Date();
+
+//     const updatedSale = await prisma.sale.update({
+//       where: { id: id },
+//       data: {
+//         productName,
+//         customerName: customerName || null,
+//         address: address || null,
+//         cost: parsedCost,
+//         soldPrice: parsedSoldPrice,
+//         profit: calculatedProfit,
+//         profitHolder,
+//         createdAt: schemaDate,
+//       },
+//     });
+
+//     return NextResponse.json({ success: true, sale: updatedSale });
+//   } catch (error) {
+//     console.error("Error updating sale:", error);
+//     return NextResponse.json(
+//       { error: "Failed to update sale" },
+//       { status: 500 },
+//     );
+//   }
+// }
 export async function PUT(
   request: Request,
   { params }: { params: { id: string } },
@@ -11,6 +54,7 @@ export async function PUT(
   try {
     const { id } = params;
     const body = await request.json();
+
     const {
       productName,
       customerName,
@@ -18,16 +62,14 @@ export async function PUT(
       cost,
       soldPrice,
       profitHolder,
-      createdAt,
     } = body;
 
-    const parsedCost = parseFloat(cost) || 0;
-    const parsedSoldPrice = parseFloat(soldPrice) || 0;
+    const parsedCost = Number(cost ?? 0);
+    const parsedSoldPrice = Number(soldPrice ?? 0);
     const calculatedProfit = parsedSoldPrice - parsedCost;
-    const schemaDate = createdAt ? new Date(createdAt) : new Date();
 
     const updatedSale = await prisma.sale.update({
-      where: { id: id },
+      where: { id },
       data: {
         productName,
         customerName: customerName || null,
@@ -36,7 +78,6 @@ export async function PUT(
         soldPrice: parsedSoldPrice,
         profit: calculatedProfit,
         profitHolder,
-        createdAt: schemaDate,
       },
     });
 
@@ -49,7 +90,6 @@ export async function PUT(
     );
   }
 }
-
 // --- DELETE: Remove a sale record ---
 export async function DELETE(
   _request: Request, // <-- Added underscore here to satisfy TypeScript unread rules

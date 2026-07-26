@@ -1,572 +1,284 @@
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import SaleForm from "./components/SaleForm";
-import SaleCard from "./components/SaleCard";
-import Stats from "./components/Stats";
-import ExpenseCard from "./components/ExpenseCard";
-import AddExpenseForm from "./components/AddExpenseForm";
-import NetBalanceSummary from "./components/NetBalanceSummary";
-
-interface Sale {
-  id: string;
-  productName: string;
-  customerName: string;
-  address: string;
-  cost: number;
-  soldPrice: number;
-  profit: number;
-  createdAt: string;
-  profitHolder?: string;
-}
-
-interface Expense {
-  id: string;
-  description: string;
-  amount: number;
-  paidBy: string;
-  createdAt: string;
-}
-
-interface SalesApiResponse {
-  sales: Sale[];
-  totalSales: number;
-  totalProfit: number;
-  count: number;
-}
-
-interface ExpensesApiResponse {
-  expenses: Expense[];
-  totalExpenses: number;
-  count: number;
-}
-
-type ActiveTab = "sales" | "expenses";
+import { useState, useEffect, useCallback } from 'react'
+import Header from '@/components/Header'
+import DashboardStats from '@/components/DashboardStats'
+import OrderList, { Sale } from '@/components/OrderList'
+import NewSaleModal from '@/components/NewSaleModal'
+import MarkReturnedModal from '@/components/MarkReturnedModal'
+import InventoryModal from '@/components/InventoryModal'
+import ExpenseModal from '@/components/ExpenseModal'
+import InventoryTab from '@/components/InventoryTab'
+import ExpensesTab from '@/components/ExpensesTab'
+import CityRatesTab from '@/components/CityRatesTab'
+import LedgerTab from '@/components/LedgerTab'
+import { Toaster, toast } from 'sonner'
+import { ShoppingCart, Package, Receipt, MapPin, Users } from 'lucide-react'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("sales");
+  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'expenses' | 'cities' | 'ledger'>('sales')
+  const [dateRange, setDateRange] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('ALL')
+  const [searchQuery, setSearchQuery] = useState<string>('')
 
-  const [sales, setSales] = useState<Sale[]>([]);
+  // State Data
+  const [sales, setSales] = useState<Sale[]>([])
   const [stats, setStats] = useState({
-    totalSales: 0,
-    totalProfit: 0,
-    count: 0,
-  });
+    totalRevenue: 0,
+    grossProfit: 0,
+    returnLoss: 0,
+    generalExpenses: 0,
+    trueNetProfit: 0,
+    totalExpensesCombined: 0,
+    activeDispatches: 0,
+    totalOrdersCount: 0,
+    partners: [],
+    suppliers: [],
+    totalSupplierDebt: 0,
+  })
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [expenseStats, setExpenseStats] = useState({
-    totalExpenses: 0,
-    count: 0,
-  });
+  // Loading States
+  const [isStatsLoading, setIsStatsLoading] = useState(true)
+  const [isSalesLoading, setIsSalesLoading] = useState(true)
+  const [isSeeding, setIsSeeding] = useState(false)
 
-  const [nomanProfit, setNomanProfit] = useState(0);
-  const [mujtabaProfit, setMujtabaProfit] = useState(0);
-  const [nomanExpenses, setNomanExpenses] = useState(0);
-  const [mujtabaExpenses, setMujtabaExpenses] = useState(0);
-  const [balanceLoading, setBalanceLoading] = useState(true);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
+  // Modal Open States
+  const [isNewSaleOpen, setIsNewSaleOpen] = useState(false)
+  const [isRestockOpen, setIsRestockOpen] = useState(false)
+  const [isExpenseOpen, setIsExpenseOpen] = useState(false)
+  const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [isExpenseLoading, setIsExpenseLoading] = useState(false);
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
-  const [isDeletingExpenseId, setIsDeletingExpenseId] = useState<string | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-
-  const [editingSale, setEditingSale] = useState<Sale | null>(null);
-
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
-  const [selectedYear, setSelectedYear] = useState<string>("all");
-  const [selectedProfitHolder, setSelectedProfitHolder] =
-    useState<string>("all");
-  const [selectedPaidBy, setSelectedPaidBy] = useState<string>("all");
-
-  const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) =>
-    (currentYear - i).toString(),
-  );
-
-  const months = [
-    { value: "01", name: "January" },
-    { value: "02", name: "February" },
-    { value: "03", name: "March" },
-    { value: "04", name: "April" },
-    { value: "05", name: "May" },
-    { value: "06", name: "June" },
-    { value: "07", name: "July" },
-    { value: "08", name: "August" },
-    { value: "09", name: "September" },
-    { value: "10", name: "October" },
-    { value: "11", name: "November" },
-    { value: "12", name: "December" },
-  ];
-
-  const buildQueryParams = (extraParams: Record<string, string> = {}) => {
-    const queryParams = new URLSearchParams();
-    if (selectedMonth !== "all") queryParams.append("month", selectedMonth);
-    if (selectedYear !== "all") queryParams.append("year", selectedYear);
-    Object.entries(extraParams).forEach(([key, value]) => {
-      if (value !== "all") queryParams.append(key, value);
-    });
-    return queryParams.toString();
-  };
-
-  const fetchSales = async () => {
+  // Fetch KPI Stats
+  const fetchStats = useCallback(async () => {
+    setIsStatsLoading(true)
     try {
-      const query = buildQueryParams({ profitHolder: selectedProfitHolder });
-      const response = await fetch(`/api/sales?${query}`);
-      if (!response.ok) throw new Error("Failed to fetch sales");
-
-      const data: SalesApiResponse = await response.json();
-      setSales(data.sales);
-      setStats({
-        totalSales: data.totalSales,
-        totalProfit: data.totalProfit,
-        count: data.count,
-      });
+      const res = await fetch(`/api/stats?range=${dateRange}`)
+      if (res.ok) {
+        const data = await res.json()
+        setStats(data)
+      }
     } catch (err) {
-      setError("Failed to load sales data");
-      console.error(err);
+      console.error('Failed to fetch stats:', err)
+    } finally {
+      setIsStatsLoading(false)
     }
-  };
+  }, [dateRange])
 
-  const fetchExpenses = async () => {
+  // Fetch Sales List
+  const fetchSales = useCallback(async () => {
+    setIsSalesLoading(true)
     try {
-      const query = buildQueryParams({ paidBy: selectedPaidBy });
-      const response = await fetch(`/api/expenses?${query}`);
-      if (!response.ok) throw new Error("Failed to fetch expenses");
-
-      const data: ExpensesApiResponse = await response.json();
-      setExpenses(data.expenses);
-      setExpenseStats({
-        totalExpenses: data.totalExpenses,
-        count: data.count,
-      });
+      let url = `/api/sales?range=${dateRange}&status=${statusFilter}`
+      if (searchQuery) {
+        url += `&search=${encodeURIComponent(searchQuery)}`
+      }
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        setSales(data)
+      }
     } catch (err) {
-      setError("Failed to load expense data");
-      console.error(err);
+      console.error('Failed to fetch sales:', err)
+    } finally {
+      setIsSalesLoading(false)
     }
-  };
+  }, [dateRange, statusFilter, searchQuery])
 
-  const fetchNetBalances = async () => {
-    setBalanceLoading(true);
-    setBalanceError(null);
-
-    const endpoints = [
-      {
-        label: "Noman sales",
-        url: `/api/sales?${buildQueryParams({ profitHolder: "Noman" })}`,
-        onSuccess: (data: SalesApiResponse) => setNomanProfit(data.totalProfit),
-      },
-      {
-        label: "Mujtaba sales",
-        url: `/api/sales?${buildQueryParams({ profitHolder: "Mujtaba" })}`,
-        onSuccess: (data: SalesApiResponse) =>
-          setMujtabaProfit(data.totalProfit),
-      },
-      {
-        label: "Noman expenses",
-        url: `/api/expenses?${buildQueryParams({ paidBy: "Noman" })}`,
-        onSuccess: (data: ExpensesApiResponse) =>
-          setNomanExpenses(data.totalExpenses),
-      },
-      {
-        label: "Mujtaba expenses",
-        url: `/api/expenses?${buildQueryParams({ paidBy: "Mujtaba" })}`,
-        onSuccess: (data: ExpensesApiResponse) =>
-          setMujtabaExpenses(data.totalExpenses),
-      },
-    ] as const;
-
-    const failures: string[] = [];
-
-    await Promise.all(
-      endpoints.map(async ({ label, url, onSuccess }) => {
-        try {
-          console.log(`[NetBalance] Fetching ${label}:`, url);
-          const response = await fetch(url);
-          const data = await response.json();
-          console.log(`[NetBalance] ${label} response:`, response.status, data);
-
-          if (!response.ok) {
-            const reason = data?.error || `HTTP ${response.status}`;
-            failures.push(`${label} (${url}): ${reason}`);
-            return;
-          }
-
-          onSuccess(data);
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : "Unknown error";
-          console.error(`[NetBalance] ${label} failed:`, err);
-          failures.push(`${label} (${url}): ${reason}`);
-        }
-      }),
-    );
-
-    if (failures.length > 0) {
-      setBalanceError(failures.join(" | "));
-    }
-
-    setBalanceLoading(false);
-  };
+  // Trigger Refresh
+  const refreshAll = useCallback(() => {
+    fetchStats()
+    fetchSales()
+  }, [fetchStats, fetchSales])
 
   useEffect(() => {
-    fetchSales();
-    fetchExpenses();
-    fetchNetBalances();
-  }, [selectedMonth, selectedYear, selectedProfitHolder, selectedPaidBy]);
+    refreshAll()
+  }, [refreshAll])
 
-  const handleFormSubmit = async (formData: any) => {
-    setIsLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    const isEditing = !!editingSale;
-    const url = isEditing ? `/api/sales/${editingSale.id}` : "/api/sales";
-    const method = isEditing ? "PUT" : "POST";
-
+  // Seed Data Handler
+  const handleSeedData = async () => {
+    setIsSeeding(true)
     try {
-      const response = await fetch(url, {
-        method: method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const res = await fetch('/api/seed')
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(data.message || 'Database seeded successfully!')
+        refreshAll()
+      } else {
+        toast.error(data.error || 'Failed to seed database')
+      }
+    } catch (err) {
+      toast.error('Seed error occurred')
+    } finally {
+      setIsSeeding(false)
+    }
+  }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.error || `Failed to ${isEditing ? "update" : "add"} sale`,
-        );
+  // Handle Quick Order Status Change (e.g. DELIVERED or CANCELLED)
+  const handleUpdateStatus = async (id: string, status: string, deductDeliveryOnReturn?: boolean) => {
+    try {
+      const res = await fetch(`/api/sales/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, deductDeliveryOnReturn }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update order status')
       }
 
-      setSuccess(
-        isEditing ? "Sale updated successfully!" : "Sale added successfully!",
-      );
-      setEditingSale(null);
-      await Promise.all([fetchSales(), fetchNetBalances()]);
-
-      setTimeout(() => setSuccess(null), 3000);
+      toast.success(`Order marked as ${status}!`)
+      refreshAll()
     } catch (err: any) {
-      setError(err.message || "Failed to save sale data");
-    } finally {
-      setIsLoading(false);
+      toast.error(err.message || 'Failed to update status')
     }
-  };
+  }
 
-  const handleExpenseSubmit = async (formData: {
-    description: string;
-    amount: string;
-    paidBy: string;
-    createdAt: string;
-  }) => {
-    setIsExpenseLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetch("/api/expenses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to add expense");
-      }
-
-      setSuccess("Expense added successfully!");
-      await Promise.all([fetchExpenses(), fetchNetBalances()]);
-
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || "Failed to save expense data");
-    } finally {
-      setIsExpenseLoading(false);
-    }
-  };
-
+  // Handle Delete Sale
   const handleDeleteSale = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this sale?")) return;
-    setIsDeletingId(id);
-    setError(null);
-    setSuccess(null);
+    if (!confirm('Are you sure you want to delete this sale record?')) return
 
     try {
-      const response = await fetch(`/api/sales/${id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Failed to delete sale");
+      const res = await fetch(`/api/sales/${id}`, {
+        method: 'DELETE',
+      })
 
-      setSuccess("Sale deleted successfully!");
-      if (editingSale?.id === id) setEditingSale(null);
-      await Promise.all([fetchSales(), fetchNetBalances()]);
+      if (!res.ok) throw new Error('Failed to delete sale')
 
-      setTimeout(() => setSuccess(null), 3000);
+      toast.success('Sale deleted successfully')
+      refreshAll()
     } catch (err: any) {
-      setError(err.message || "Failed to delete sale");
-    } finally {
-      setIsDeletingId(null);
+      toast.error(err.message || 'Failed to delete sale')
     }
-  };
-
-  const handleDeleteExpense = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this expense?")) return;
-    setIsDeletingExpenseId(id);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetch(`/api/expenses/${id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Failed to delete expense");
-
-      setSuccess("Expense deleted successfully!");
-      await Promise.all([fetchExpenses(), fetchNetBalances()]);
-
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || "Failed to delete expense");
-    } finally {
-      setIsDeletingExpenseId(null);
-    }
-  };
+  }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-4xl font-bold text-gray-900">
-            📊 Business Manager
-          </h1>
-          <p className="text-gray-600 mt-1">Track your sales, expenses, and profits</p>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950">
+      
+      {/* Toast Notification Container */}
+      <Toaster position="top-right" theme="dark" richColors />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {success && (
-          <div className="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
-            {success}
-          </div>
-        )}
-        {error && (
-          <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            {error}
-          </div>
-        )}
+      {/* Navigation Header */}
+      <Header
+        dateRange={dateRange}
+        setDateRange={setDateRange}
+        onOpenNewSale={() => setIsNewSaleOpen(true)}
+        onOpenExpense={() => setIsExpenseOpen(true)}
+        onOpenRestock={() => setIsRestockOpen(true)}
+        onSeedData={handleSeedData}
+        isSeeding={isSeeding}
+      />
 
-        <NetBalanceSummary
-          nomanProfit={nomanProfit}
-          mujtabaProfit={mujtabaProfit}
-          nomanExpenses={nomanExpenses}
-          mujtabaExpenses={mujtabaExpenses}
-          isLoading={balanceLoading}
-          error={balanceError}
-        />
+      {/* Main Body Layout */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        
+        {/* KPI Summary Grid */}
+        <DashboardStats stats={stats} isLoading={isStatsLoading} />
 
-        {/* Tab Toggle */}
-        <div className="bg-white rounded-lg shadow-md p-1 mb-6 flex">
-          <button
-            onClick={() => setActiveTab("sales")}
-            className={`flex-1 py-3 px-4 rounded-md font-bold text-sm transition ${
-              activeTab === "sales"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-50"
-            }`}
-          >
-            Sales
-          </button>
-          <button
-            onClick={() => setActiveTab("expenses")}
-            className={`flex-1 py-3 px-4 rounded-md font-bold text-sm transition ${
-              activeTab === "expenses"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-50"
-            }`}
-          >
-            Expenses
-          </button>
-        </div>
-
-        {/* Filter UI Row */}
-        <div className="bg-white rounded-lg shadow-md p-4 mb-6 flex flex-wrap gap-4 items-center justify-between">
-          <div className="text-lg font-semibold text-gray-700">
-            Filter Records
-          </div>
-          <div className="flex flex-wrap gap-4">
-            {activeTab === "sales" ? (
-              <div>
-                <select
-                  value={selectedProfitHolder}
-                  onChange={(e) => setSelectedProfitHolder(e.target.value)}
-                  className="block w-44 p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none text-gray-700 font-medium bg-gray-50"
-                >
-                  <option value="all">All Profit Holders</option>
-                  <option value="Mujtaba">Mujtaba</option>
-                  <option value="Noman">Noman</option>
-                </select>
-              </div>
-            ) : (
-              <div>
-                <select
-                  value={selectedPaidBy}
-                  onChange={(e) => setSelectedPaidBy(e.target.value)}
-                  className="block w-44 p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none text-gray-700 font-medium bg-gray-50"
-                >
-                  <option value="all">All Payers</option>
-                  <option value="Noman">Noman</option>
-                  <option value="Mujtaba">Mujtaba</option>
-                  <option value="Shared">Shared</option>
-                </select>
-              </div>
-            )}
-            <div>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="block w-40 p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none text-gray-700"
+        {/* Interactive Main Tabs */}
+        <div className="border-b border-slate-800 flex items-center gap-2 overflow-x-auto">
+          {[
+            { id: 'sales', label: 'Dispatches & Sales', icon: ShoppingCart },
+            { id: 'inventory', label: 'Inventory & Stock', icon: Package },
+            { id: 'expenses', label: 'Expenses Portal', icon: Receipt },
+            { id: 'cities', label: 'City Delivery Rates', icon: MapPin },
+            { id: 'ledger', label: 'Partners & Suppliers Ledger', icon: Users },
+          ].map((tab) => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition whitespace-nowrap ${
+                  isActive
+                    ? 'border-emerald-400 text-emerald-400 bg-emerald-500/5 rounded-t-lg'
+                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                }`}
               >
-                <option value="all">All Months</option>
-                {months.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                className="block w-32 p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none text-gray-700"
-              >
-                <option value="all">All Years</option>
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            )
+          })}
         </div>
 
-        {activeTab === "sales" ? (
-          <>
-            <Stats
-              totalSales={stats.totalSales}
-              totalProfit={stats.totalProfit}
-              count={stats.count}
+        {/* Tab View Content */}
+        <div>
+          {activeTab === 'sales' && (
+            <OrderList
+              sales={sales}
+              isLoading={isSalesLoading}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              onUpdateStatus={handleUpdateStatus}
+              onOpenReturnModal={(sale) => setReturnModalSale(sale)}
+              onDeleteSale={handleDeleteSale}
             />
+          )}
 
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-2">
-                {editingSale && (
-                  <button
-                    onClick={() => setEditingSale(null)}
-                    className="text-sm font-semibold text-gray-500 hover:text-gray-800 underline"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-              <SaleForm
-                onSubmit={handleFormSubmit}
-                isLoading={isLoading}
-                editData={editingSale}
-              />
-            </div>
+          {activeTab === 'inventory' && (
+            <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
+          )}
 
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-6">
-                All Sales ({stats.count})
-              </h2>
-              {sales.length === 0 ? (
-                <div className="bg-white rounded-lg shadow-md p-12 text-center">
-                  <p className="text-gray-500 text-lg">
-                    No sales found for the selected parameters. 🚀
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {sales.map((sale) => (
-                    <SaleCard
-                      key={sale.id}
-                      sale={sale}
-                      onDelete={handleDeleteSale}
-                      onEdit={(item) => {
-                        setEditingSale(item);
-                        window.scrollTo({ top: 300, behavior: "smooth" });
-                      }}
-                      isDeleting={isDeletingId === sale.id}
-                      isCurrentlyEditing={editingSale?.id === sale.id}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
-                <p className="text-gray-600 text-sm font-semibold mb-2">
-                  TOTAL EXPENSES
-                </p>
-                <p className="text-3xl font-bold text-red-600 mb-2">
-                  ${expenseStats.totalExpenses.toFixed(2)}
-                </p>
-                <p className="text-gray-500 text-xs">
-                  {expenseStats.count} transactions
-                </p>
-              </div>
-              <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
-                <p className="text-gray-600 text-sm font-semibold mb-2">
-                  EXPENSE COUNT
-                </p>
-                <p className="text-3xl font-bold text-yellow-600 mb-2">
-                  {expenseStats.count}
-                </p>
-                <p className="text-gray-500 text-xs">
-                  {expenseStats.count > 0
-                    ? `Avg: $${(expenseStats.totalExpenses / expenseStats.count).toFixed(2)}`
-                    : "No expenses"}
-                </p>
-              </div>
-            </div>
+          {activeTab === 'expenses' && (
+            <ExpensesTab onOpenExpenseModal={() => setIsExpenseOpen(true)} />
+          )}
 
-            <div className="mb-8">
-              <AddExpenseForm
-                onSubmit={handleExpenseSubmit}
-                isLoading={isExpenseLoading}
-              />
-            </div>
+          {activeTab === 'cities' && <CityRatesTab />}
 
-            <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-6">
-                All Expenses ({expenseStats.count})
-              </h2>
-              {expenses.length === 0 ? (
-                <div className="bg-white rounded-lg shadow-md p-12 text-center">
-                  <p className="text-gray-500 text-lg">
-                    No expenses found for the selected parameters. 🚀
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {expenses.map((expense) => (
-                    <ExpenseCard
-                      key={expense.id}
-                      expense={expense}
-                      onDelete={handleDeleteExpense}
-                      isDeleting={isDeletingExpenseId === expense.id}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </main>
-  );
+          {activeTab === 'ledger' && <LedgerTab />}
+        </div>
+
+      </main>
+
+      {/* Global Modals */}
+      <NewSaleModal
+        isOpen={isNewSaleOpen}
+        onClose={() => setIsNewSaleOpen(false)}
+        onSuccess={() => {
+          toast.success('Order dispatched successfully!')
+          refreshAll()
+        }}
+      />
+
+      <InventoryModal
+        isOpen={isRestockOpen}
+        onClose={() => setIsRestockOpen(false)}
+        onSuccess={() => {
+          toast.success('Stock restocked successfully!')
+          refreshAll()
+        }}
+      />
+
+      <ExpenseModal
+        isOpen={isExpenseOpen}
+        onClose={() => setIsExpenseOpen(false)}
+        onSuccess={() => {
+          toast.success('Expense recorded successfully!')
+          refreshAll()
+        }}
+      />
+
+      <MarkReturnedModal
+        isOpen={Boolean(returnModalSale)}
+        sale={returnModalSale}
+        onClose={() => setReturnModalSale(null)}
+        onConfirm={(saleId, deductLoss) => {
+          handleUpdateStatus(saleId, 'RETURNED', deductLoss)
+          setReturnModalSale(null)
+        }}
+      />
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800/80 mt-16 py-6 text-center text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4">
+          Business Manager ERP v2.0 • Powered by Next.js 14, Prisma & Neon PostgreSQL
+        </div>
+      </footer>
+
+    </div>
+  )
 }

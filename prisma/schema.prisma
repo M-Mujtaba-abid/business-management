@@ -1,29 +1,3 @@
-// // This is your Prisma schema file,
-// // learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// generator client {
-//   provider = "prisma-client-js"
-// }
-
-// datasource db {
-//   provider = "postgresql"
-//   url      = env("DATABASE_URL")
-// }
-
-// model Sale {
-//   id        String     @id @default(cuid())
-//   productName String
-//   customerName String
-//   address   String
-//   cost      Float
-//   soldPrice Float
-//   profit    Float
-//   createdAt DateTime  @default(now())
-//   updatedAt DateTime  @updatedAt
-
-//   @@index([createdAt])
-// }
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -31,19 +5,124 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  // url wali line yahan se delete kar di hai
 }
 
-model Sale {
+enum ExpenseCategory {
+  MARKETING_ADS
+  PACKAGING
+  COURIER_BILL
+  LOGISTICS
+  UTILITIES
+  MISC
+}
+
+enum FundingSource {
+  BUSINESS_PROFIT
+  PERSONAL_CAPITAL
+  CREDIT_SUPPLIER
+}
+
+enum OrderStatus {
+  DISPATCHED
+  DELIVERED
+  RETURNED
+  CANCELLED
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  title         String          @default("General Expense")
+  amount        Float
+  category      ExpenseCategory @default(MISC)
+  fundingSource FundingSource   @default(BUSINESS_PROFIT)
+  partnerId     String?
+  note          String?
+  createdAt     DateTime        @default(now())
+
+  partner       Partner?        @relation(fields: [partnerId], references: [id])
+
+  @@index([createdAt])
+  @@index([category])
+}
+
+model Partner {
+  id                   String              @id @default(cuid())
+  name                 String              // e.g. "Noman", "Mujtaba"
+  totalCapitalInvested Float               @default(0)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  purchases            InventoryPurchase[]
+  expenses             Expense[]
+}
+
+model Product {
   id          String   @id @default(cuid())
-  productName String
-  customerName String
-  address     String
-  cost        Float
-  soldPrice   Float
-  profit      Float
+  name        String   @unique
+  costPrice   Float
+  salePrice   Float
+  stockQty    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  purchases   InventoryPurchase[]
+  sales       Sale[]
+}
+
+model Supplier {
+  id            String              @id @default(cuid())
+  name          String
+  phone         String?
+  unpaidBalance Float               @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  purchases     InventoryPurchase[]
+}
+
+model InventoryPurchase {
+  id            String        @id @default(cuid())
+  productId     String
+  quantity      Int
+  unitCost      Float
+  totalCost     Float
+  fundingSource FundingSource
+  partnerId     String?
+  supplierId    String?
+  createdAt     DateTime      @default(now())
+
+  product       Product       @relation(fields: [productId], references: [id])
+  partner       Partner?      @relation(fields: [partnerId], references: [id])
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
+}
+
+model Sale {
+  id                     String      @id @default(cuid())
+  productId              String?
+  productName            String
+  customerName           String
+  address                String
+  city                   String      @default("General")
+  quantity               Int         @default(1)
+  costPrice              Float       @default(0)
+  soldPrice              Float
+  deliveryCharge         Float       @default(0)
+  profit                 Float       @default(0)
+  status                 OrderStatus @default(DISPATCHED)
+  deductDeliveryOnReturn Boolean     @default(true)
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  product                Product?    @relation(fields: [productId], references: [id])
+
   @@index([createdAt])
+  @@index([city])
+  @@index([status])
+}
+
+model CityDeliveryRate {
+  id          String   @id @default(cuid())
+  cityName    String   @unique
+  deliveryFee Float
+  updatedAt   DateTime @updatedAt
 }

@@ -79,19 +79,19 @@ export default function LedgerTab() {
   return (
     <div className="space-y-6">
       
-      {/* 1. Partner Capital Equity Section */}
+      {/* 1. Partner Investment Section */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-400" />
-              Partner Capital Equity (Noman & Mujtaba)
+              Partner Investment
             </h3>
-            <p className="text-xs text-slate-400">Total personal capital injected into inventory & expenses</p>
+            <p className="text-xs text-slate-400">Total capital invested into inventory & business operations</p>
           </div>
           <button
             onClick={() => setShowAddPartner(true)}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition"
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition"
           >
             + Add Partner
           </button>
@@ -108,20 +108,20 @@ export default function LedgerTab() {
             {partners.map((p) => (
               <div
                 key={p.id}
-                className="bg-gradient-to-br from-slate-800/80 to-slate-900 border border-slate-700/60 rounded-xl p-5 shadow-lg"
+                className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-lg space-y-3"
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Partner</span>
-                    <h4 className="text-xl font-bold text-slate-100 mt-0.5">{p.name}</h4>
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Partner Investor</span>
+                    <h4 className="text-lg font-bold text-slate-100 mt-0.5">{p.name}</h4>
                   </div>
                   <div className="h-8 w-8 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center">
                     <ArrowUpRight className="h-4 w-4" />
                   </div>
                 </div>
-                <div className="mt-4 pt-3 border-t border-slate-700/50 flex justify-between items-center">
+                <div className="pt-3 border-t border-slate-700/50 flex justify-between items-center">
                   <span className="text-xs text-slate-400">Total Invested:</span>
-                  <span className="text-lg font-mono font-bold text-blue-400">
+                  <span className="text-base font-mono font-bold text-blue-400">
                     Rs. {p.totalCapitalInvested.toLocaleString()}
                   </span>
                 </div>
@@ -131,19 +131,19 @@ export default function LedgerTab() {
         )}
       </div>
 
-      {/* 2. Supplier Debt Ledger Section */}
+      {/* 2. Supplier Payables Section */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-purple-400" />
-              Credit Supplier Debt Ledger
+              Supplier Payables
             </h3>
-            <p className="text-xs text-slate-400">Unpaid balances owed to raw material & product suppliers</p>
+            <p className="text-xs text-slate-400">Outstanding balances owed to credit suppliers</p>
           </div>
           <button
             onClick={() => setShowAddSupplier(true)}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg border border-slate-700 transition"
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition"
           >
             + Add Supplier
           </button>
@@ -166,11 +166,11 @@ export default function LedgerTab() {
                     {s.phone && <p className="text-xs text-slate-400">{s.phone}</p>}
                   </div>
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-semibold">
-                    Supplier
+                    Credit Supplier
                   </span>
                 </div>
                 <div className="pt-2 border-t border-slate-700/50 flex justify-between items-center">
-                  <span className="text-xs text-slate-400">Unpaid Balance:</span>
+                  <span className="text-xs text-slate-400">Outstanding Balance:</span>
                   <span className="text-base font-mono font-bold text-purple-400">
                     Rs. {s.unpaidBalance.toLocaleString()}
                   </span>
@@ -183,27 +183,27 @@ export default function LedgerTab() {
 
       {/* Add Partner Modal */}
       {showAddPartner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm text-slate-100 space-y-4">
-            <h3 className="font-bold text-lg">Add Partner</h3>
+            <h3 className="font-bold text-base">Add Partner</h3>
             <form onSubmit={handleAddPartner} className="space-y-3">
               <input
                 type="text"
                 required
                 value={partnerName}
                 onChange={(e) => setPartnerName(e.target.value)}
-                placeholder="Partner Name (e.g. Noman)"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+                placeholder="Partner Name"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
               />
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddPartner(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-lg"
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-1.5 bg-blue-500 text-white font-bold text-xs rounded-lg">
+                <button type="submit" className="px-4 py-1.5 bg-blue-500 text-white font-bold text-xs rounded-xl">
                   Save Partner
                 </button>
               </div>
@@ -214,34 +214,34 @@ export default function LedgerTab() {
 
       {/* Add Supplier Modal */}
       {showAddSupplier && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm text-slate-100 space-y-4">
-            <h3 className="font-bold text-lg">Add Credit Supplier</h3>
+            <h3 className="font-bold text-base">Add Credit Supplier</h3>
             <form onSubmit={handleAddSupplier} className="space-y-3">
               <input
                 type="text"
                 required
                 value={supplierName}
                 onChange={(e) => setSupplierName(e.target.value)}
-                placeholder="Supplier Name (e.g. Apex Textiles)"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+                placeholder="Supplier Company Name"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500"
               />
               <input
                 type="text"
                 value={supplierPhone}
                 onChange={(e) => setSupplierPhone(e.target.value)}
                 placeholder="Phone Number (Optional)"
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500"
               />
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowAddSupplier(false)}
-                  className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-lg"
+                  className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-xl"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-1.5 bg-purple-500 text-white font-bold text-xs rounded-lg">
+                <button type="submit" className="px-4 py-1.5 bg-purple-500 text-white font-bold text-xs rounded-xl">
                   Save Supplier
                 </button>
               </div>

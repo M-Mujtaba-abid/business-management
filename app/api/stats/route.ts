@@ -12,16 +12,31 @@ export async function GET(request: NextRequest) {
     const now = new Date()
 
     if (range === 'today') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      dateFilter = { gte: startOfDay }
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+      dateFilter = { gte: startOfDay, lte: endOfDay }
     } else if (range === 'week') {
       const startOfWeek = new Date(now)
       startOfWeek.setDate(now.getDate() - now.getDay())
       startOfWeek.setHours(0, 0, 0, 0)
       dateFilter = { gte: startOfWeek }
     } else if (range === 'month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
       dateFilter = { gte: startOfMonth }
+    } else if (/^\d{4}-\d{2}$/.test(range)) {
+      // Format: YYYY-MM (e.g. 2026-07)
+      const [yearStr, monthStr] = range.split('-')
+      const year = parseInt(yearStr, 10)
+      const month = parseInt(monthStr, 10) - 1
+      const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
+      const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999)
+      dateFilter = { gte: startOfMonth, lte: endOfMonth }
+    } else if (/^\d{4}$/.test(range)) {
+      // Format: YYYY (e.g. 2026)
+      const year = parseInt(range, 10)
+      const startOfYear = new Date(year, 0, 1, 0, 0, 0, 0)
+      const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999)
+      dateFilter = { gte: startOfYear, lte: endOfYear }
     }
 
     const salesWhere = dateFilter.gte ? { createdAt: dateFilter } : {}

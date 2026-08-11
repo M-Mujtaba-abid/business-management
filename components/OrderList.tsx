@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Search, Package, MapPin } from 'lucide-react'
+import { Search, Package, MapPin, Calendar } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 
 export interface Sale {
@@ -30,6 +30,11 @@ interface OrderListProps {
   setSearchQuery: (q: string) => void
   statusFilter: string
   setStatusFilter: (s: string) => void
+  startDate?: string
+  setStartDate?: (d: string) => void
+  endDate?: string
+  setEndDate?: (d: string) => void
+  setDateRange?: (r: string) => void
   onSelectOrder: (sale: Sale) => void
 }
 
@@ -40,6 +45,11 @@ export default function OrderList({
   setSearchQuery,
   statusFilter,
   setStatusFilter,
+  startDate = '',
+  setStartDate,
+  endDate = '',
+  setEndDate,
+  setDateRange,
   onSelectOrder,
 }: OrderListProps) {
   const formatPKR = (amt: number) => `Rs. ${amt.toLocaleString()}`
@@ -48,7 +58,7 @@ export default function OrderList({
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-6">
       
       {/* Top Filter Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         
         {/* Status Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
@@ -73,16 +83,53 @@ export default function OrderList({
           ))}
         </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full md:w-72">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search customer, city, item..."
-            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition"
-          />
+        {/* Search & Custom Date Filters */}
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+          
+          {/* Start Date & End Date Pickers */}
+          <div className="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/80 rounded-xl px-2.5 py-1 text-xs">
+            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <span className="text-[10px] text-slate-400 font-semibold">From:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate && setStartDate(e.target.value)}
+              className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark]"
+            />
+            <span className="text-[10px] text-slate-400 font-semibold">To:</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate && setEndDate(e.target.value)}
+              className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark]"
+            />
+            {(startDate || endDate) && (
+              <button
+                onClick={() => {
+                  if (setStartDate) setStartDate('')
+                  if (setEndDate) setEndDate('')
+                  if (setDateRange) setDateRange('all')
+                }}
+                className="text-slate-400 hover:text-rose-400 text-xs ml-1 font-bold transition"
+                title="Clear date filter"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative flex-1 sm:w-64">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search customer, city, item..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition"
+            />
+          </div>
+
         </div>
 
       </div>

@@ -19,6 +19,8 @@ import { Toaster, toast } from 'sonner'
 export default function Home() {
   const [activeSection, setActiveSection] = useState<NavSection>('dashboard')
   const [dateRange, setDateRange] = useState<string>('all')
+  const [startDate, setStartDate] = useState<string>('')
+  const [endDate, setEndDate] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState<string>('')
 
@@ -54,7 +56,10 @@ export default function Home() {
   const fetchStats = useCallback(async () => {
     setIsStatsLoading(true)
     try {
-      const res = await fetch(`/api/stats?range=${dateRange}`)
+      let url = `/api/stats?range=${dateRange}`
+      if (startDate) url += `&startDate=${startDate}`
+      if (endDate) url += `&endDate=${endDate}`
+      const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
         setStats(data)
@@ -64,13 +69,15 @@ export default function Home() {
     } finally {
       setIsStatsLoading(false)
     }
-  }, [dateRange])
+  }, [dateRange, startDate, endDate])
 
   // Fetch Sales List
   const fetchSales = useCallback(async () => {
     setIsSalesLoading(true)
     try {
       let url = `/api/sales?range=${dateRange}&status=${statusFilter}`
+      if (startDate) url += `&startDate=${startDate}`
+      if (endDate) url += `&endDate=${endDate}`
       if (searchQuery) {
         url += `&search=${encodeURIComponent(searchQuery)}`
       }
@@ -84,7 +91,7 @@ export default function Home() {
     } finally {
       setIsSalesLoading(false)
     }
-  }, [dateRange, statusFilter, searchQuery])
+  }, [dateRange, statusFilter, searchQuery, startDate, endDate])
 
   // Fetch Low Stock Count for Alert
   const fetchLowStockCount = useCallback(async () => {
@@ -177,6 +184,10 @@ export default function Home() {
       onSelectSection={setActiveSection}
       dateRange={dateRange}
       setDateRange={setDateRange}
+      startDate={startDate}
+      setStartDate={setStartDate}
+      endDate={endDate}
+      setEndDate={setEndDate}
       onOpenNewDispatch={() => setIsNewDispatchOpen(true)}
       onOpenRestock={() => setIsRestockOpen(true)}
       onOpenExpense={() => setIsExpenseOpen(true)}
@@ -208,6 +219,11 @@ export default function Home() {
           setSearchQuery={setSearchQuery}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+          setDateRange={setDateRange}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
         />
       )}

@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Sparkles,
   PlusCircle,
-  CreditCard,
   ArrowUpRight,
   RotateCcw,
 } from 'lucide-react'
@@ -83,42 +82,82 @@ export default function DashboardStats({
   const hasSupplierDebt = stats.totalSupplierDebt > 0
   const hasReturnLosses = stats.returnLoss > 0
 
+  // Calculate percentage ratios relative to Total Revenue
+  const revBase = stats.totalRevenue > 0 ? stats.totalRevenue : 1
+  const grossMarginPct = stats.totalRevenue > 0 ? ((stats.grossProfit / revBase) * 100).toFixed(1) : '0.0'
+  const netMarginPct = stats.totalRevenue > 0 ? ((stats.trueNetProfit / revBase) * 100).toFixed(1) : '0.0'
+  const expensesPct = stats.totalRevenue > 0 ? ((stats.generalExpenses / revBase) * 100).toFixed(1) : '0.0'
+  const returnLossPct = stats.totalRevenue > 0 ? ((stats.returnLoss / revBase) * 100).toFixed(1) : '0.0'
+  const combinedExpPct = stats.totalRevenue > 0 ? ((stats.totalExpensesCombined / revBase) * 100).toFixed(1) : '0.0'
+
   return (
     <div className="space-y-8">
 
-      {/* 1. Calm 5-Primary KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 1. Primary Financial & Operational KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
 
         {/* KPI 1: Revenue */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Total Sales</span>
-            <div className="h-8 w-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
           <div>
             <div className="text-2xl font-bold text-slate-100">{formatPKR(stats.totalRevenue)}</div>
-            <p className="text-[11px] text-slate-400 mt-1">Delivered sales revenue</p>
+            <div className="flex items-center gap-1 mt-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                100% Base
+              </span>
+              <span className="text-[11px] text-slate-400">Delivered</span>
+            </div>
           </div>
         </div>
 
-        {/* KPI 2: Net Profit (Highlighted) */}
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-emerald-500/30 rounded-2xl p-4 shadow-lg shadow-emerald-950/20 space-y-2">
+        {/* KPI 2: Overall Sales Profit (Gross Margin before Expenses) */}
+        <div className="bg-gradient-to-br from-slate-900 to-teal-950/40 border border-teal-500/30 rounded-2xl p-4 shadow-lg space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Overall Sales Profit</span>
+            <div className="h-8 w-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-2xl font-black text-teal-400">{formatPKR(stats.grossProfit)}</div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                {grossMarginPct}% Margin
+              </span>
+              <span className="text-[11px] text-slate-400">Before expenses</span>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 3: Net Profit (After Expenses & Returns) */}
+        <div className={`bg-gradient-to-br from-slate-900 ${stats.trueNetProfit >= 0 ? 'to-emerald-950/40 border-emerald-500/30' : 'to-rose-950/40 border-rose-500/30'} border rounded-2xl p-4 shadow-lg space-y-2`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Net Profit</span>
+              <span className={`text-xs font-bold ${stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'} uppercase tracking-wider`}>
+                Net Profit
+              </span>
               <div className="group/tooltip relative cursor-pointer">
                 <HelpCircle className="h-3.5 w-3.5 text-slate-400 hover:text-emerald-400 transition" />
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block w-64 p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-300 shadow-2xl z-50">
-                  <p className="font-bold text-white mb-1">Net Profit Calculation:</p>
-                  <p className="text-[11px]">Gross Margin: {formatPKR(stats.grossProfit)}</p>
-                  <p className="text-[11px] text-rose-400">- Return Losses: {formatPKR(stats.returnLoss)}</p>
-                  <p className="text-[11px] text-rose-400">- Expenses: {formatPKR(stats.generalExpenses)}</p>
+                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block w-72 p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-300 shadow-2xl z-50">
+                  <p className="font-bold text-white mb-1">Net Profit Percentage Breakdown:</p>
+                  <p className="text-[11px] text-teal-400">+ Gross Profit: {formatPKR(stats.grossProfit)} ({grossMarginPct}%)</p>
+                  <p className="text-[11px] text-rose-400">- Return Losses: {formatPKR(stats.returnLoss)} ({returnLossPct}%)</p>
+                  <p className="text-[11px] text-rose-400">- General Expenses: {formatPKR(stats.generalExpenses)} ({expensesPct}%)</p>
+                  <div className="border-t border-slate-800 my-1 pt-1 font-bold text-white flex justify-between">
+                    <span>Final Net Margin:</span>
+                    <span className={stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {formatPKR(stats.trueNetProfit)} ({netMarginPct}%)
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="h-8 w-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <div className={`h-8 w-8 rounded-xl ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'} flex items-center justify-center`}>
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
@@ -126,11 +165,35 @@ export default function DashboardStats({
             <div className={`text-2xl font-black ${stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {formatPKR(stats.trueNetProfit)}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Profit after returns & expenses</p>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}`}>
+                {netMarginPct}% Net
+              </span>
+              <span className="text-[11px] text-slate-400">After expenses</span>
+            </div>
           </div>
         </div>
 
-        {/* KPI 3: Active Dispatches */}
+        {/* KPI 4: Total Expenses */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400">Total Expenses</span>
+            <div className="h-8 w-8 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+              <Receipt className="h-4 w-4" />
+            </div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold text-rose-400">{formatPKR(stats.generalExpenses)}</div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                {expensesPct}% Expense
+              </span>
+              <span className="text-[11px] text-slate-400">Of sales</span>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI 5: Active Dispatches */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Active Orders</span>
@@ -140,38 +203,65 @@ export default function DashboardStats({
           </div>
           <div>
             <div className="text-2xl font-bold text-blue-400">{stats.activeDispatches}</div>
-            <p className="text-[11px] text-slate-400 mt-1">Orders in transit ({stats.totalOrdersCount} total)</p>
+            <p className="text-[11px] text-slate-400 mt-1">In transit ({stats.totalOrdersCount} total)</p>
           </div>
         </div>
 
-        {/* KPI 4: Return Losses */}
+        {/* KPI 6: Return Loss */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Return Loss</span>
-            <div className="h-8 w-8 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <RotateCcw className="h-4 w-4" />
             </div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-rose-400">{formatPKR(stats.returnLoss)}</div>
-            <p className="text-[11px] text-slate-400 mt-1">Courier penalties on returns</p>
-          </div>
-        </div>
-
-        {/* KPI 5: Supplier Payables */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Supplier Payables</span>
-            <div className="h-8 w-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-              <CreditCard className="h-4 w-4" />
+            <div className="text-2xl font-bold text-amber-400">{formatPKR(stats.returnLoss)}</div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {returnLossPct}% Loss
+              </span>
+              <span className="text-[11px] text-slate-400">Courier penalty</span>
             </div>
           </div>
-          <div>
-            <div className="text-2xl font-bold text-purple-400">{formatPKR(stats.totalSupplierDebt)}</div>
-            <p className="text-[11px] text-slate-400 mt-1">Outstanding supplier credit</p>
-          </div>
         </div>
 
+      </div>
+
+      {/* Profit Flow Summary Bar with % Badges */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
+        <div>
+          <h3 className="font-bold text-slate-200 text-sm">Profit Flow Pipeline</h3>
+          <p className="text-[11px] text-slate-400">Financial reconciliation with percentage ratios</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 font-mono">
+          <div className="bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+            <span className="text-slate-400 block text-[10px]">Sales Revenue</span>
+            <span className="font-bold text-slate-100">{formatPKR(stats.totalRevenue)} (100%)</span>
+          </div>
+
+          <span className="text-slate-500 font-bold text-sm">➔</span>
+
+          <div className="bg-teal-500/10 px-3 py-1.5 rounded-xl border border-teal-500/30">
+            <span className="text-teal-400 block text-[10px]">Overall Sales Profit</span>
+            <span className="font-bold text-teal-400">{formatPKR(stats.grossProfit)} ({grossMarginPct}%)</span>
+          </div>
+
+          <span className="text-rose-400 font-bold text-sm">-</span>
+
+          <div className="bg-rose-500/10 px-3 py-1.5 rounded-xl border border-rose-500/30">
+            <span className="text-rose-400 block text-[10px]">Expenses + Returns</span>
+            <span className="font-bold text-rose-400">{formatPKR(stats.totalExpensesCombined)} ({combinedExpPct}%)</span>
+          </div>
+
+          <span className="text-slate-500 font-bold text-sm">=</span>
+
+          <div className={`px-3 py-1.5 rounded-xl border font-bold ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' : 'bg-rose-500/10 border-rose-500/40 text-rose-400'}`}>
+            <span className="block text-[10px]">Net Profit (After Expenses)</span>
+            <span>{formatPKR(stats.trueNetProfit)} ({netMarginPct}%)</span>
+          </div>
+        </div>
       </div>
 
       {/* 2. Quick Actions Bar */}

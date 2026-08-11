@@ -9,6 +9,10 @@ interface AppShellProps {
   onSelectSection: (section: NavSection) => void
   dateRange: string
   setDateRange: (range: string) => void
+  startDate?: string
+  setStartDate?: (date: string) => void
+  endDate?: string
+  setEndDate?: (date: string) => void
   onOpenNewDispatch: () => void
   onOpenRestock: () => void
   onOpenExpense: () => void
@@ -22,6 +26,10 @@ export default function AppShell({
   onSelectSection,
   dateRange,
   setDateRange,
+  startDate = '',
+  setStartDate,
+  endDate = '',
+  setEndDate,
   onOpenNewDispatch,
   onOpenRestock,
   onOpenExpense,
@@ -85,6 +93,8 @@ export default function AppShell({
   }
 
   const handleMonthChange = (mVal: string) => {
+    if (setStartDate) setStartDate('')
+    if (setEndDate) setEndDate('')
     if (mVal === 'ALL') {
       setDateRange(selectedYear)
     } else {
@@ -93,11 +103,19 @@ export default function AppShell({
   }
 
   const handleYearChange = (yVal: string) => {
+    if (setStartDate) setStartDate('')
+    if (setEndDate) setEndDate('')
     if (selectedMonth === 'ALL') {
       setDateRange(yVal)
     } else {
       setDateRange(`${yVal}-${selectedMonth}`)
     }
+  }
+
+  const handlePresetChange = (val: string) => {
+    if (setStartDate) setStartDate('')
+    if (setEndDate) setEndDate('')
+    setDateRange(val)
   }
 
   return (
@@ -138,7 +156,7 @@ export default function AppShell({
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
             
             {/* Filter Bar */}
-            <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700/60 rounded-xl p-1 text-xs overflow-x-auto">
+            <div className="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 rounded-xl p-1 text-xs overflow-x-auto flex-wrap">
               <Calendar className="h-3.5 w-3.5 text-slate-400 ml-1.5 mr-1 hidden md:block shrink-0" />
               
               {/* Quick Presets */}
@@ -149,9 +167,9 @@ export default function AppShell({
               ].map((btn) => (
                 <button
                   key={btn.value}
-                  onClick={() => setDateRange(btn.value)}
+                  onClick={() => handlePresetChange(btn.value)}
                   className={`px-2 py-1 rounded-lg transition font-medium text-[11px] whitespace-nowrap ${
-                    dateRange === btn.value
+                    dateRange === btn.value && !startDate && !endDate
                       ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
@@ -160,14 +178,14 @@ export default function AppShell({
                 </button>
               ))}
 
-              <div className="h-4 w-px bg-slate-700/80 mx-1 hidden sm:block" />
+              <div className="h-4 w-px bg-slate-700/80 mx-0.5 hidden sm:block" />
 
               {/* Month Dropdown */}
               <select
                 value={selectedMonth}
                 onChange={(e) => handleMonthChange(e.target.value)}
                 className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-semibold transition focus:outline-none focus:border-emerald-500 ${
-                  dateRange.includes('-') || dateRange === 'month' ? 'text-emerald-400 border-emerald-500/50' : 'text-slate-300'
+                  (dateRange.includes('-') || dateRange === 'month') && !startDate && !endDate ? 'text-emerald-400 border-emerald-500/50' : 'text-slate-300'
                 }`}
               >
                 {monthsList.map((m) => (
@@ -189,6 +207,43 @@ export default function AppShell({
                   </option>
                 ))}
               </select>
+
+              <div className="h-4 w-px bg-slate-700/80 mx-0.5 hidden sm:block" />
+
+              {/* Custom Date Inputs (Start & End Date) */}
+              <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-700/80 rounded-lg px-2 py-0.5">
+                <span className="text-[10px] text-slate-400 font-semibold">From:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    if (setStartDate) setStartDate(e.target.value)
+                  }}
+                  className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark] w-24 sm:w-auto"
+                />
+                <span className="text-[10px] text-slate-400 font-semibold">To:</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    if (setEndDate) setEndDate(e.target.value)
+                  }}
+                  className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark] w-24 sm:w-auto"
+                />
+                {(startDate || endDate) && (
+                  <button
+                    onClick={() => {
+                      if (setStartDate) setStartDate('')
+                      if (setEndDate) setEndDate('')
+                      setDateRange('all')
+                    }}
+                    className="text-slate-400 hover:text-rose-400 text-xs ml-1 font-bold transition"
+                    title="Clear custom date filter"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Quick Order Button */}

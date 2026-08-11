@@ -6,12 +6,23 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
     const range = searchParams.get('range') || 'all'
 
     let dateFilter: any = {}
     const now = new Date()
 
-    if (range === 'today') {
+    if (startDate || endDate) {
+      if (startDate) {
+        const [sY, sM, sD] = startDate.split('-').map(Number)
+        dateFilter.gte = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+      }
+      if (endDate) {
+        const [eY, eM, eD] = endDate.split('-').map(Number)
+        dateFilter.lte = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+      }
+    } else if (range === 'today') {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
       dateFilter = { gte: startOfDay, lte: endOfDay }
@@ -39,8 +50,8 @@ export async function GET(request: NextRequest) {
       dateFilter = { gte: startOfYear, lte: endOfYear }
     }
 
-    const salesWhere = dateFilter.gte ? { createdAt: dateFilter } : {}
-    const expensesWhere = dateFilter.gte ? { createdAt: dateFilter } : {}
+    const salesWhere = (dateFilter.gte || dateFilter.lte) ? { createdAt: dateFilter } : {}
+    const expensesWhere = (dateFilter.gte || dateFilter.lte) ? { createdAt: dateFilter } : {}
 
     // Fetch Sales
     const sales = await prisma.sale.findMany({

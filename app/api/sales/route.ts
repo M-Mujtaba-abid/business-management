@@ -26,9 +26,22 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    if (range !== 'all') {
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+
+    let dateFilter: any = {}
+
+    if (startDate || endDate) {
+      if (startDate) {
+        const [sY, sM, sD] = startDate.split('-').map(Number)
+        dateFilter.gte = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
+      }
+      if (endDate) {
+        const [eY, eM, eD] = endDate.split('-').map(Number)
+        dateFilter.lte = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
+      }
+    } else if (range !== 'all') {
       const now = new Date()
-      let dateFilter: any = null
 
       if (range === 'today') {
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
@@ -55,10 +68,10 @@ export async function GET(request: NextRequest) {
         const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999)
         dateFilter = { gte: startOfYear, lte: endOfYear }
       }
+    }
 
-      if (dateFilter) {
-        where.createdAt = dateFilter
-      }
+    if (dateFilter.gte || dateFilter.lte) {
+      where.createdAt = dateFilter
     }
 
     const sales = await prisma.sale.findMany({

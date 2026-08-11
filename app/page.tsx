@@ -1,28 +1,30 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Header from '@/components/Header'
+import AppShell from '@/components/ui/AppShell'
+import { NavSection } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
 import OrderList, { Sale } from '@/components/OrderList'
-import NewSaleModal from '@/components/NewSaleModal'
+import OrderDetailsDrawer from '@/components/ui/OrderDetailsDrawer'
+import NewDispatchWizard from '@/components/ui/NewDispatchWizard'
+import RestockWizard from '@/components/ui/RestockWizard'
+import ExpenseWizard from '@/components/ui/ExpenseWizard'
 import MarkReturnedModal from '@/components/MarkReturnedModal'
-import InventoryModal from '@/components/InventoryModal'
-import ExpenseModal from '@/components/ExpenseModal'
 import InventoryTab from '@/components/InventoryTab'
 import ExpensesTab from '@/components/ExpensesTab'
 import CityRatesTab from '@/components/CityRatesTab'
 import LedgerTab from '@/components/LedgerTab'
 import { Toaster, toast } from 'sonner'
-import { ShoppingCart, Package, Receipt, MapPin, Users } from 'lucide-react'
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'sales' | 'inventory' | 'expenses' | 'cities' | 'ledger'>('sales')
+  const [activeSection, setActiveSection] = useState<NavSection>('dashboard')
   const [dateRange, setDateRange] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState<string>('')
 
   // State Data
   const [sales, setSales] = useState<Sale[]>([])
+  const [lowStockCount, setLowStockCount] = useState<number>(0)
   const [stats, setStats] = useState({
     totalRevenue: 0,
     grossProfit: 0,
@@ -33,7 +35,6 @@ export default function Home() {
     activeDispatches: 0,
     totalOrdersCount: 0,
     partners: [],
-    suppliers: [],
     totalSupplierDebt: 0,
   })
 
@@ -42,10 +43,11 @@ export default function Home() {
   const [isSalesLoading, setIsSalesLoading] = useState(true)
   const [isSeeding, setIsSeeding] = useState(false)
 
-  // Modal Open States
-  const [isNewSaleOpen, setIsNewSaleOpen] = useState(false)
+  // Modals & Drawers
+  const [isNewDispatchOpen, setIsNewDispatchOpen] = useState(false)
   const [isRestockOpen, setIsRestockOpen] = useState(false)
   const [isExpenseOpen, setIsExpenseOpen] = useState(false)
+  const [selectedDrawerSale, setSelectedDrawerSale] = useState<Sale | null>(null)
   const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
 
   // Fetch KPI Stats
@@ -84,11 +86,28 @@ export default function Home() {
     }
   }, [dateRange, statusFilter, searchQuery])
 
+  // Fetch Low Stock Count for Alert
+  const fetchLowStockCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/products')
+      if (res.ok) {
+        const prods = await res.json()
+        if (Array.isArray(prods)) {
+          const low = prods.filter((p: any) => p.stockQty < 5).length
+          setLowStockCount(low)
+        }
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
+
   // Trigger Refresh
   const refreshAll = useCallback(() => {
     fetchStats()
     fetchSales()
-  }, [fetchStats, fetchSales])
+    fetchLowStockCount()
+  }, [fetchStats, fetchSales, fetchLowStockCount])
 
   useEffect(() => {
     refreshAll()
@@ -113,7 +132,7 @@ export default function Home() {
     }
   }
 
-  // Handle Quick Order Status Change (e.g. DELIVERED or CANCELLED)
+  // Handle Quick Order Status Change
   const handleUpdateStatus = async (id: string, status: string, deductDeliveryOnReturn?: boolean) => {
     try {
       const res = await fetch(`/api/sales/${id}`, {
@@ -136,115 +155,96 @@ export default function Home() {
 
   // Handle Delete Sale
   const handleDeleteSale = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this sale record?')) return
+    if (!confirm('Are you sure you want to delete this order record?')) return
 
     try {
       const res = await fetch(`/api/sales/${id}`, {
         method: 'DELETE',
       })
 
-      if (!res.ok) throw new Error('Failed to delete sale')
+      if (!res.ok) throw new Error('Failed to delete order')
 
-      toast.success('Sale deleted successfully')
+      toast.success('Order deleted successfully')
       refreshAll()
     } catch (err: any) {
-      toast.error(err.message || 'Failed to delete sale')
+      toast.error(err.message || 'Failed to delete order')
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950">
-      
-      {/* Toast Notification Container */}
+    <AppShell
+      currentSection={activeSection}
+      onSelectSection={setActiveSection}
+      dateRange={dateRange}
+      setDateRange={setDateRange}
+      onOpenNewDispatch={() => setIsNewDispatchOpen(true)}
+      onOpenRestock={() => setIsRestockOpen(true)}
+      onOpenExpense={() => setIsExpenseOpen(true)}
+      onSeedData={handleSeedData}
+      isSeeding={isSeeding}
+    >
       <Toaster position="top-right" theme="dark" richColors />
 
-      {/* Navigation Header */}
-      <Header
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        onOpenNewSale={() => setIsNewSaleOpen(true)}
-        onOpenExpense={() => setIsExpenseOpen(true)}
-        onOpenRestock={() => setIsRestockOpen(true)}
-        onSeedData={handleSeedData}
-        isSeeding={isSeeding}
+      {/* Render Active View */}
+      {activeSection === 'dashboard' && (
+        <DashboardStats
+          stats={stats}
+          recentSales={sales}
+          lowStockProductsCount={lowStockCount}
+          isLoading={isStatsLoading}
+          onOpenNewDispatch={() => setIsNewDispatchOpen(true)}
+          onOpenRestock={() => setIsRestockOpen(true)}
+          onOpenExpense={() => setIsExpenseOpen(true)}
+          onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
+          onViewAllOrders={() => setActiveSection('orders')}
+        />
+      )}
+
+      {activeSection === 'orders' && (
+        <OrderList
+          sales={sales}
+          isLoading={isSalesLoading}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
+        />
+      )}
+
+      {activeSection === 'inventory' && (
+        <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
+      )}
+
+      {activeSection === 'finance' && (
+        <ExpensesTab onOpenExpenseModal={() => setIsExpenseOpen(true)} />
+      )}
+
+      {activeSection === 'partners-suppliers' && <LedgerTab />}
+
+      {activeSection === 'settings' && <CityRatesTab />}
+
+      {/* Slide-over Order Details Drawer */}
+      <OrderDetailsDrawer
+        sale={selectedDrawerSale}
+        isOpen={Boolean(selectedDrawerSale)}
+        onClose={() => setSelectedDrawerSale(null)}
+        onUpdateStatus={handleUpdateStatus}
+        onOpenReturnModal={(sale) => setReturnModalSale(sale)}
+        onDeleteSale={handleDeleteSale}
       />
 
-      {/* Main Body Layout */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        
-        {/* KPI Summary Grid */}
-        <DashboardStats stats={stats} isLoading={isStatsLoading} />
-
-        {/* Interactive Main Tabs */}
-        <div className="border-b border-slate-800 flex items-center gap-2 overflow-x-auto">
-          {[
-            { id: 'sales', label: 'Dispatches & Sales', icon: ShoppingCart },
-            { id: 'inventory', label: 'Inventory & Stock', icon: Package },
-            { id: 'expenses', label: 'Expenses Portal', icon: Receipt },
-            { id: 'cities', label: 'City Delivery Rates', icon: MapPin },
-            { id: 'ledger', label: 'Partners & Suppliers Ledger', icon: Users },
-          ].map((tab) => {
-            const Icon = tab.icon
-            const isActive = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition whitespace-nowrap ${
-                  isActive
-                    ? 'border-emerald-400 text-emerald-400 bg-emerald-500/5 rounded-t-lg'
-                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Tab View Content */}
-        <div>
-          {activeTab === 'sales' && (
-            <OrderList
-              sales={sales}
-              isLoading={isSalesLoading}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              onUpdateStatus={handleUpdateStatus}
-              onOpenReturnModal={(sale) => setReturnModalSale(sale)}
-              onDeleteSale={handleDeleteSale}
-            />
-          )}
-
-          {activeTab === 'inventory' && (
-            <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
-          )}
-
-          {activeTab === 'expenses' && (
-            <ExpensesTab onOpenExpenseModal={() => setIsExpenseOpen(true)} />
-          )}
-
-          {activeTab === 'cities' && <CityRatesTab />}
-
-          {activeTab === 'ledger' && <LedgerTab />}
-        </div>
-
-      </main>
-
-      {/* Global Modals */}
-      <NewSaleModal
-        isOpen={isNewSaleOpen}
-        onClose={() => setIsNewSaleOpen(false)}
+      {/* Guided Step-by-Step Wizards & Modals */}
+      <NewDispatchWizard
+        isOpen={isNewDispatchOpen}
+        onClose={() => setIsNewDispatchOpen(false)}
         onSuccess={() => {
           toast.success('Order dispatched successfully!')
           refreshAll()
         }}
       />
 
-      <InventoryModal
+      <RestockWizard
         isOpen={isRestockOpen}
         onClose={() => setIsRestockOpen(false)}
         onSuccess={() => {
@@ -253,7 +253,7 @@ export default function Home() {
         }}
       />
 
-      <ExpenseModal
+      <ExpenseWizard
         isOpen={isExpenseOpen}
         onClose={() => setIsExpenseOpen(false)}
         onSuccess={() => {
@@ -272,13 +272,6 @@ export default function Home() {
         }}
       />
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 mt-16 py-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4">
-          Business Manager ERP v2.0 • Powered by Next.js 14, Prisma & Neon PostgreSQL
-        </div>
-      </footer>
-
-    </div>
+    </AppShell>
   )
 }

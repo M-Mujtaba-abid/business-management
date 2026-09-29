@@ -6,15 +6,17 @@ import {
   DollarSign,
   Receipt,
   Truck,
-  HelpCircle,
   AlertTriangle,
-  Sparkles,
-  PlusCircle,
+  Plus,
+  // PlusCircle, // OLD INVENTORY FLOW (Restock button)
   ArrowUpRight,
   RotateCcw,
+  Wallet,
+  Recycle,
+  Banknote,
 } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
-import { Sale } from './OrderList'
+import { Sale, SupplierPayBadge, PaymentBadge } from './OrderList'
 
 interface Partner {
   id: string
@@ -34,6 +36,11 @@ interface StatsProps {
     totalOrdersCount: number
     partners: Partner[]
     totalSupplierDebt: number
+    supplierPendingTotal?: number
+    returnedItemsCount?: number
+    orderExpenses?: number
+    receivablePendingTotal?: number
+    receivablePendingCount?: number
   }
   recentSales?: Sale[]
   lowStockProductsCount?: number
@@ -43,367 +50,389 @@ interface StatsProps {
   onOpenExpense: () => void
   onSelectOrder: (sale: Sale) => void
   onViewAllOrders: () => void
+  onViewSupplierPayments?: () => void
 }
+
+const formatPKR = (amount: number) =>
+  new Intl.NumberFormat('en-PK', {
+    style: 'currency',
+    currency: 'PKR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+
+const pct = (part: number, base: number) => (base > 0 ? ((part / base) * 100).toFixed(1) : '0.0')
 
 export default function DashboardStats({
   stats,
   recentSales = [],
-  lowStockProductsCount = 0,
+  // lowStockProductsCount = 0, // OLD INVENTORY FLOW (low stock alert)
   isLoading,
   onOpenNewDispatch,
-  onOpenRestock,
+  // onOpenRestock, // OLD INVENTORY FLOW (Restock button)
   onOpenExpense,
   onSelectOrder,
   onViewAllOrders,
+  onViewSupplierPayments,
 }: StatsProps) {
-  const formatPKR = (amount: number) => {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency: 'PKR',
-      maximumFractionDigits: 0,
-    }).format(amount)
-  }
-
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-28 bg-slate-900/60 border border-slate-800 rounded-2xl animate-pulse" />
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-32 bg-white border border-slate-200 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-20 bg-white border border-slate-200 rounded-2xl animate-pulse" />
           ))}
         </div>
       </div>
     )
   }
 
-  // Generate actionable Needs Attention alerts based on live data
-  const hasLowStock = lowStockProductsCount > 0
-  const hasActiveDispatches = stats.activeDispatches > 0
-  const hasSupplierDebt = stats.totalSupplierDebt > 0
-  const hasReturnLosses = stats.returnLoss > 0
+  const supplierPending = stats.supplierPendingTotal || 0
+  const toReceive = stats.receivablePendingTotal || 0
+  const toReceiveCount = stats.receivablePendingCount || 0
+  const hasToReceive = toReceive > 0
+  const returnedItemsCount = stats.returnedItemsCount || 0
+  const orderExpenses = stats.orderExpenses || 0
+  const netPositive = stats.trueNetProfit >= 0
 
-  // Calculate percentage ratios relative to Total Revenue
-  const revBase = stats.totalRevenue > 0 ? stats.totalRevenue : 1
-  const grossMarginPct = stats.totalRevenue > 0 ? ((stats.grossProfit / revBase) * 100).toFixed(1) : '0.0'
-  const netMarginPct = stats.totalRevenue > 0 ? ((stats.trueNetProfit / revBase) * 100).toFixed(1) : '0.0'
-  const expensesPct = stats.totalRevenue > 0 ? ((stats.generalExpenses / revBase) * 100).toFixed(1) : '0.0'
-  const returnLossPct = stats.totalRevenue > 0 ? ((stats.returnLoss / revBase) * 100).toFixed(1) : '0.0'
-  const combinedExpPct = stats.totalRevenue > 0 ? ((stats.totalExpensesCombined / revBase) * 100).toFixed(1) : '0.0'
+  const hasActiveDispatches = stats.activeDispatches > 0
+  const hasSupplierPending = supplierPending > 0
+  const hasReturnedStock = returnedItemsCount > 0
+  /* OLD INVENTORY FLOW — uncomment to restore
+  const hasLowStock = lowStockProductsCount > 0
+  const hasSupplierDebt = stats.totalSupplierDebt > 0
+  */
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
 
-      {/* 1. Primary Financial & Operational KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* 1. Main numbers */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
-        {/* KPI 1: Revenue */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
+        {/* Sales */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Total Sales</span>
-            <div className="h-8 w-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+            <span className="text-sm font-medium text-slate-500">Sales</span>
+            <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-100">{formatPKR(stats.totalRevenue)}</div>
-            <div className="flex items-center gap-1 mt-1">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                100% Base
-              </span>
-              <span className="text-[11px] text-slate-400">Delivered</span>
-            </div>
+            <div className="text-2xl font-bold text-slate-900">{formatPKR(stats.totalRevenue)}</div>
+            <p className="text-xs text-slate-500 mt-1">From delivered orders</p>
           </div>
         </div>
 
-        {/* KPI 2: Overall Sales Profit (Gross Margin before Expenses) */}
-        <div className="bg-gradient-to-br from-slate-900 to-teal-950/40 border border-teal-500/30 rounded-2xl p-4 shadow-lg space-y-2">
+        {/* Profit (after DC / petrol / GST) */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-teal-400 uppercase tracking-wider">Overall Sales Profit</span>
-            <div className="h-8 w-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center">
+            <span className="text-sm font-medium text-slate-500">Order Profit</span>
+            <div className="h-9 w-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
           <div>
-            <div className="text-2xl font-black text-teal-400">{formatPKR(stats.grossProfit)}</div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                {grossMarginPct}% Margin
-              </span>
-              <span className="text-[11px] text-slate-400">Before expenses</span>
-            </div>
+            <div className="text-2xl font-bold text-teal-700">{formatPKR(stats.grossProfit)}</div>
+            <p className="text-xs text-slate-500 mt-1">
+              <span className="font-semibold text-teal-700">{pct(stats.grossProfit, stats.totalRevenue)}%</span> margin · after DC, petrol, GST
+            </p>
           </div>
         </div>
 
-        {/* KPI 3: Net Profit (After Expenses & Returns) */}
-        <div className={`bg-gradient-to-br from-slate-900 ${stats.trueNetProfit >= 0 ? 'to-emerald-950/40 border-emerald-500/30' : 'to-rose-950/40 border-rose-500/30'} border rounded-2xl p-4 shadow-lg space-y-2`}>
+        {/* Net profit */}
+        <div
+          className={`rounded-2xl p-5 shadow-sm space-y-3 border ${
+            netPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
+          }`}
+        >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className={`text-xs font-bold ${stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'} uppercase tracking-wider`}>
-                Net Profit
-              </span>
-              <div className="group/tooltip relative cursor-pointer">
-                <HelpCircle className="h-3.5 w-3.5 text-slate-400 hover:text-emerald-400 transition" />
-                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block w-72 p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-300 shadow-2xl z-50">
-                  <p className="font-bold text-white mb-1">Net Profit Percentage Breakdown:</p>
-                  <p className="text-[11px] text-teal-400">+ Gross Profit: {formatPKR(stats.grossProfit)} ({grossMarginPct}%)</p>
-                  <p className="text-[11px] text-rose-400">- Return Losses: {formatPKR(stats.returnLoss)} ({returnLossPct}%)</p>
-                  <p className="text-[11px] text-rose-400">- General Expenses: {formatPKR(stats.generalExpenses)} ({expensesPct}%)</p>
-                  <div className="border-t border-slate-800 my-1 pt-1 font-bold text-white flex justify-between">
-                    <span>Final Net Margin:</span>
-                    <span className={stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                      {formatPKR(stats.trueNetProfit)} ({netMarginPct}%)
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className={`h-8 w-8 rounded-xl ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'} flex items-center justify-center`}>
+            <span className={`text-sm font-semibold ${netPositive ? 'text-emerald-700' : 'text-rose-700'}`}>Net Profit</span>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center ${
+                netPositive ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+              }`}
+            >
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
           <div>
-            <div className={`text-2xl font-black ${stats.trueNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <div className={`text-2xl font-bold ${netPositive ? 'text-emerald-700' : 'text-rose-700'}`}>
               {formatPKR(stats.trueNetProfit)}
             </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}`}>
-                {netMarginPct}% Net
-              </span>
-              <span className="text-[11px] text-slate-400">After expenses</span>
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 4: Total Expenses */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Total Expenses</span>
-            <div className="h-8 w-8 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
-              <Receipt className="h-4 w-4" />
-            </div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-rose-400">{formatPKR(stats.generalExpenses)}</div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                {expensesPct}% Expense
-              </span>
-              <span className="text-[11px] text-slate-400">Of sales</span>
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 5: Active Dispatches */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Active Orders</span>
-            <div className="h-8 w-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
-              <Truck className="h-4 w-4" />
-            </div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-blue-400">{stats.activeDispatches}</div>
-            <p className="text-[11px] text-slate-400 mt-1">In transit ({stats.totalOrdersCount} total)</p>
-          </div>
-        </div>
-
-        {/* KPI 6: Return Loss */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Return Loss</span>
-            <div className="h-8 w-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-              <RotateCcw className="h-4 w-4" />
-            </div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-amber-400">{formatPKR(stats.returnLoss)}</div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                {returnLossPct}% Loss
-              </span>
-              <span className="text-[11px] text-slate-400">Courier penalty</span>
-            </div>
+            <p className="text-xs text-slate-600 mt-1">
+              <span className="font-semibold">{pct(stats.trueNetProfit, stats.totalRevenue)}%</span> · after expenses & returns
+            </p>
           </div>
         </div>
 
       </div>
 
-      {/* Profit Flow Summary Bar with % Badges */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
-        <div>
-          <h3 className="font-bold text-slate-200 text-sm">Profit Flow Pipeline</h3>
-          <p className="text-[11px] text-slate-400">Financial reconciliation with percentage ratios</p>
-        </div>
+      {/* 2. Payments: money coming in / going out */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-        <div className="flex flex-wrap items-center gap-2 font-mono">
-          <div className="bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
-            <span className="text-slate-400 block text-[10px]">Sales Revenue</span>
-            <span className="font-bold text-slate-100">{formatPKR(stats.totalRevenue)} (100%)</span>
+        {/* Money to receive (Daraz / courier / other) */}
+        <button
+          onClick={onViewSupplierPayments}
+          className="text-left bg-white border border-slate-200 hover:border-emerald-300 rounded-2xl p-5 shadow-sm space-y-3 transition"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-500">To Receive</span>
+            <div className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Banknote className="h-4 w-4" />
+            </div>
           </div>
-
-          <span className="text-slate-500 font-bold text-sm">➔</span>
-
-          <div className="bg-teal-500/10 px-3 py-1.5 rounded-xl border border-teal-500/30">
-            <span className="text-teal-400 block text-[10px]">Overall Sales Profit</span>
-            <span className="font-bold text-teal-400">{formatPKR(stats.grossProfit)} ({grossMarginPct}%)</span>
+          <div>
+            <div className={`text-2xl font-bold ${hasToReceive ? 'text-emerald-600' : 'text-slate-900'}`}>
+              {formatPKR(toReceive)}
+            </div>
+            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+              {hasToReceive ? `${toReceiveCount} delivered order(s) not paid yet` : 'All payments received'}{' '}
+              <ArrowUpRight className="h-3 w-3" />
+            </p>
           </div>
+        </button>
 
-          <span className="text-rose-400 font-bold text-sm">-</span>
-
-          <div className="bg-rose-500/10 px-3 py-1.5 rounded-xl border border-rose-500/30">
-            <span className="text-rose-400 block text-[10px]">Expenses + Returns</span>
-            <span className="font-bold text-rose-400">{formatPKR(stats.totalExpensesCombined)} ({combinedExpPct}%)</span>
+        {/* Owed to suppliers */}
+        <button
+          onClick={onViewSupplierPayments}
+          className="text-left bg-white border border-slate-200 hover:border-amber-300 rounded-2xl p-5 shadow-sm space-y-3 transition"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-500">Owed to Suppliers</span>
+            <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <Wallet className="h-4 w-4" />
+            </div>
           </div>
+          <div>
+            <div className={`text-2xl font-bold ${hasSupplierPending ? 'text-amber-600' : 'text-slate-900'}`}>
+              {formatPKR(supplierPending)}
+            </div>
+            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+              {hasSupplierPending ? 'Pending payments' : 'All paid'} <ArrowUpRight className="h-3 w-3" />
+            </p>
+          </div>
+        </button>
+      </div>
 
-          <span className="text-slate-500 font-bold text-sm">=</span>
+      {/* 3. Secondary numbers */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Active Orders', value: String(stats.activeDispatches), note: `${stats.totalOrdersCount} total`, icon: Truck, color: 'text-blue-600 bg-blue-50' },
+          { label: 'Expenses', value: formatPKR(stats.generalExpenses), note: `${pct(stats.generalExpenses, stats.totalRevenue)}% of sales`, icon: Receipt, color: 'text-rose-600 bg-rose-50' },
+          { label: 'Return Loss', value: formatPKR(stats.returnLoss), note: `${pct(stats.returnLoss, stats.totalRevenue)}% of sales`, icon: RotateCcw, color: 'text-orange-600 bg-orange-50' },
+          { label: 'Returned Stock', value: String(returnedItemsCount), note: 'covers ready to reuse', icon: Recycle, color: 'text-emerald-600 bg-emerald-50' },
+        ].map((card) => {
+          const Icon = card.icon
+          return (
+            <div key={card.label} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-3">
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${card.color}`}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500">{card.label}</div>
+                <div className="text-lg font-bold text-slate-900 truncate">{card.value}</div>
+                <div className="text-[11px] text-slate-400">{card.note}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
-          <div className={`px-3 py-1.5 rounded-xl border font-bold ${stats.trueNetProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' : 'bg-rose-500/10 border-rose-500/40 text-rose-400'}`}>
-            <span className="block text-[10px]">Net Profit (After Expenses)</span>
-            <span>{formatPKR(stats.trueNetProfit)} ({netMarginPct}%)</span>
+      {/* 3. How the profit is made */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-semibold text-slate-900">Profit breakdown</h3>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-slate-500">Sales</div>
+            <div className="font-bold text-slate-900">{formatPKR(stats.totalRevenue)}</div>
+          </div>
+          <span className="text-slate-400 font-bold">−</span>
+          <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-slate-500">Cover cost + DC/Petrol/GST</div>
+            <div className="font-bold text-slate-900">{formatPKR(stats.totalRevenue - stats.grossProfit)}</div>
+            <div className="text-[10px] text-slate-400">incl. {formatPKR(orderExpenses)} DC/Petrol/GST</div>
+          </div>
+          <span className="text-slate-400 font-bold">=</span>
+          <div className="px-3 py-2 rounded-xl bg-teal-50 border border-teal-200">
+            <div className="text-teal-700">Order profit</div>
+            <div className="font-bold text-teal-700">{formatPKR(stats.grossProfit)}</div>
+          </div>
+          <span className="text-slate-400 font-bold">−</span>
+          <div className="px-3 py-2 rounded-xl bg-rose-50 border border-rose-200">
+            <div className="text-rose-700">Expenses + return loss</div>
+            <div className="font-bold text-rose-700">{formatPKR(stats.totalExpensesCombined)}</div>
+          </div>
+          <span className="text-slate-400 font-bold">=</span>
+          <div
+            className={`px-3 py-2 rounded-xl border ${
+              netPositive ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'
+            }`}
+          >
+            <div>Net profit</div>
+            <div className="font-bold">{formatPKR(stats.trueNetProfit)}</div>
           </div>
         </div>
       </div>
 
-      {/* 2. Quick Actions Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-base font-bold text-slate-100">Quick Actions</h2>
-          <p className="text-xs text-slate-400">Frequently used business operations</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      {/* 4. Quick actions + needs attention */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+          <h3 className="text-sm font-semibold text-slate-900">Quick actions</h3>
           <button
             onClick={onOpenNewDispatch}
-            className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition shadow-md shadow-emerald-500/10"
+            className="w-full px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm rounded-xl flex items-center justify-center gap-2 transition"
           >
-            <Sparkles className="h-4 w-4" />
-            <span>New Order</span>
+            <Plus className="h-4 w-4" /> New Order
           </button>
-
+          {/* OLD INVENTORY FLOW — uncomment to restore
           <button
             onClick={onOpenRestock}
-            className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition"
+            className="w-full px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-xl flex items-center justify-center gap-2 transition"
           >
-            <PlusCircle className="h-4 w-4 text-emerald-400" />
-            <span>Restock Inventory</span>
+            <PlusCircle className="h-4 w-4 text-emerald-600" /> Restock Inventory
           </button>
-
+          */}
           <button
             onClick={onOpenExpense}
-            className="flex-1 sm:flex-initial px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition"
+            className="w-full px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-sm font-medium rounded-xl flex items-center justify-center gap-2 transition"
           >
-            <Receipt className="h-4 w-4 text-rose-400" />
-            <span>Add Expense</span>
+            <Receipt className="h-4 w-4 text-rose-500" /> Add Expense
           </button>
+        </div>
+
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" /> Needs attention
+          </h3>
+
+          {!hasActiveDispatches && !hasSupplierPending && !hasReturnedStock && !hasToReceive ? (
+            <p className="text-sm text-slate-500 py-4 text-center">All clear. Nothing needs attention.</p>
+          ) : (
+            <div className="space-y-2">
+              {hasActiveDispatches && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Truck className="h-4 w-4 shrink-0" />
+                    <span><b>{stats.activeDispatches}</b> order(s) waiting for delivery</span>
+                  </div>
+                  <button onClick={onViewAllOrders} className="text-xs font-semibold text-blue-700 hover:underline shrink-0">
+                    Review
+                  </button>
+                </div>
+              )}
+
+              {hasToReceive && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 text-emerald-800">
+                    <Banknote className="h-4 w-4 shrink-0" />
+                    <span><b>{formatPKR(toReceive)}</b> not received yet for {toReceiveCount} delivered order(s)</span>
+                  </div>
+                  {onViewSupplierPayments && (
+                    <button onClick={onViewSupplierPayments} className="text-xs font-semibold text-emerald-700 hover:underline shrink-0">
+                      View
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {hasSupplierPending && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <Wallet className="h-4 w-4 shrink-0" />
+                    <span><b>{formatPKR(supplierPending)}</b> still owed to suppliers</span>
+                  </div>
+                  {onViewSupplierPayments && (
+                    <button onClick={onViewSupplierPayments} className="text-xs font-semibold text-amber-700 hover:underline shrink-0">
+                      View
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {hasReturnedStock && (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  <Recycle className="h-4 w-4 shrink-0" />
+                  <span><b>{returnedItemsCount}</b> returned cover(s) ready to use in a new order</span>
+                </div>
+              )}
+
+              {/* OLD INVENTORY FLOW — uncomment to restore
+              {hasLowStock && (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm">
+                  <span className="text-amber-800">{lowStockProductsCount} product(s) running low on stock</span>
+                  <button onClick={onOpenRestock} className="text-xs font-semibold text-amber-700 hover:underline">Restock</button>
+                </div>
+              )}
+              {hasSupplierDebt && (
+                <div className="rounded-xl border border-purple-100 bg-purple-50 px-4 py-3 text-sm text-purple-800">
+                  Rs. {stats.totalSupplierDebt.toLocaleString()} unpaid supplier balance (restock credit)
+                </div>
+              )}
+              */}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 3. Needs Attention Section */}
-      {(hasLowStock || hasActiveDispatches || hasSupplierDebt || hasReturnLosses) && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-400" /> Needs Attention
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-
-            {hasLowStock && (
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex justify-between items-center text-xs">
-                <div>
-                  <h4 className="font-bold text-amber-400">Low Stock Alert</h4>
-                  <p className="text-slate-300 mt-0.5">{lowStockProductsCount} product(s) running low on stock.</p>
-                </div>
-                <button
-                  onClick={onOpenRestock}
-                  className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold rounded-lg shrink-0 ml-2"
-                >
-                  Restock
-                </button>
-              </div>
-            )}
-
-            {hasActiveDispatches && (
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3.5 flex justify-between items-center text-xs">
-                <div>
-                  <h4 className="font-bold text-blue-400">Pending Deliveries</h4>
-                  <p className="text-slate-300 mt-0.5">{stats.activeDispatches} order(s) awaiting delivery confirmation.</p>
-                </div>
-                <button
-                  onClick={onViewAllOrders}
-                  className="px-2.5 py-1 bg-blue-500 text-white font-bold rounded-lg shrink-0 ml-2"
-                >
-                  Review
-                </button>
-              </div>
-            )}
-
-            {hasSupplierDebt && (
-              <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-3.5 flex justify-between items-center text-xs">
-                <div>
-                  <h4 className="font-bold text-purple-400">Supplier Payables Owed</h4>
-                  <p className="text-slate-300 mt-0.5">Rs. {stats.totalSupplierDebt.toLocaleString()} unpaid supplier balance.</p>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
-      {/* 4. Recent Orders Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+      {/* 5. Recent orders */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex justify-between items-center">
-          <div>
-            <h3 className="text-base font-bold text-slate-100">Recent Orders</h3>
-            <p className="text-xs text-slate-400">Latest order dispatches and statuses</p>
-          </div>
+          <h3 className="text-sm font-semibold text-slate-900">Recent orders</h3>
           <button
             onClick={onViewAllOrders}
-            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition"
+            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 transition"
           >
-            View All <ArrowUpRight className="h-3.5 w-3.5" />
+            View all <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
         </div>
 
         {recentSales.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-slate-800 rounded-xl text-slate-500 text-xs">
-            No orders found. Click &quot;New Order&quot; to start recording dispatches.
+          <div className="p-8 text-center border border-dashed border-slate-200 rounded-xl text-slate-500 text-sm">
+            No orders yet. Click &quot;New Order&quot; to add your first one.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3">Order Item</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">City</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-3 py-2 font-medium">Item</th>
+                  <th className="px-3 py-2 font-medium">Supplier</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Payment</th>
+                  <th className="px-3 py-2 font-medium">Supplier pay</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {recentSales.slice(0, 5).map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-800/40 transition cursor-pointer" onClick={() => onSelectOrder(sale)}>
-                    <td className="px-4 py-3 font-semibold text-slate-100">{sale.productName}</td>
-                    <td className="px-4 py-3 text-slate-200">{sale.customerName}</td>
-                    <td className="px-4 py-3 text-slate-400">{sale.city}</td>
-                    <td className="px-4 py-3 font-mono font-medium text-emerald-400">
-                      {formatPKR(sale.soldPrice * sale.quantity)}
+              <tbody className="divide-y divide-slate-100">
+                {recentSales.slice(0, 6).map((sale) => (
+                  <tr key={sale.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => onSelectOrder(sale)}>
+                    <td className="px-3 py-3">
+                      <div className="font-medium text-slate-900">{sale.productName}</div>
+                      {(sale.orderSource?.name || sale.category?.name) && (
+                        <div className="text-xs text-slate-500">
+                          {[sale.orderSource?.name, sale.category?.name].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 text-slate-600">
+                      {sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : '—')}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-slate-900">{formatPKR(sale.soldPrice * sale.quantity)}</div>
+                      <div className="text-xs text-slate-500">Profit {formatPKR(sale.profit)}</div>
+                    </td>
+                    <td className="px-3 py-3">
                       <StatusBadge status={sale.status} />
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onSelectOrder(sale)
-                        }}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] transition"
-                      >
-                        Details
-                      </button>
+                    <td className="px-3 py-3">
+                      <PaymentBadge status={sale.paymentStatus} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <SupplierPayBadge status={sale.supplierPaymentStatus} />
                     </td>
                   </tr>
                 ))}

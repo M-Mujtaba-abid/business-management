@@ -129,21 +129,21 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
   const totalCost = (parseInt(quantity, 10) || 0) * (parseFloat(unitCost) || 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl text-slate-100 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 overflow-hidden flex flex-col">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/50">
+        <div className="flex items-center justify-between p-5 border-b border-slate-200 bg-white/50">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
               <PlusCircle className="h-5 w-5" />
             </div>
             <div>
               <h2 className="text-base font-bold">Restock Inventory</h2>
-              <p className="text-xs text-slate-400">Step {step} of 2 — {step === 1 ? 'Product & Quantity' : 'Payment Source'}</p>
+              <p className="text-xs text-slate-500">Step {step} of 2 — {step === 1 ? 'Product & Quantity' : 'Payment Source'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white transition">
+          <button onClick={onClose} className="p-1 rounded-lg text-slate-500 hover:text-slate-900 transition">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -151,7 +151,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs rounded-xl">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">
               {error}
             </div>
           )}
@@ -160,12 +160,12 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">What are you restocking? *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">What are you restocking? *</label>
                 <select
                   required
                   value={productId}
                   onChange={(e) => handleProductSelect(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition"
+                  className="w-full bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 transition"
                 >
                   <option value="">-- Select Product --</option>
                   {products.map((p) => (
@@ -178,18 +178,18 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Restock Quantity *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Restock Quantity *</label>
                   <input
                     type="number"
                     min="1"
                     required
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition"
+                    className="w-full bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 transition"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Cost Per Unit (Rs) *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Cost Per Unit (Rs) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -197,14 +197,14 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
                     value={unitCost}
                     onChange={(e) => setUnitCost(e.target.value)}
                     placeholder="1200"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 transition"
+                    className="w-full bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 transition"
                   />
                 </div>
               </div>
 
-              <div className="bg-slate-800/60 p-3 rounded-xl flex justify-between items-center text-xs border border-slate-700/60">
-                <span className="text-slate-400">Total Purchase Value:</span>
-                <span className="text-base font-bold font-mono text-emerald-400">Rs. {totalCost.toLocaleString()}</span>
+              <div className="bg-slate-100/60 p-3 rounded-xl flex justify-between items-center text-xs border border-slate-300/60">
+                <span className="text-slate-500">Total Purchase Value:</span>
+                <span className="text-base font-bold font-mono text-emerald-600">Rs. {totalCost.toLocaleString()}</span>
               </div>
             </div>
           )}
@@ -212,7 +212,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
           {/* STEP 2: PAYMENT SOURCE */}
           {step === 2 && (
             <div className="space-y-4 animate-in fade-in">
-              <label className="block text-xs font-semibold text-slate-300">How will you pay? *</label>
+              <label className="block text-xs font-semibold text-slate-700">How will you pay? *</label>
 
               <div className="grid grid-cols-3 gap-2 text-xs font-medium">
                 {[
@@ -229,8 +229,8 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
                       onClick={() => setFundingSource(item.value as any)}
                       className={`p-3 rounded-xl border text-center flex flex-col items-center gap-1.5 transition ${
                         isSelected
-                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-400 font-bold shadow-md'
-                          : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
+                          ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600 font-bold shadow-md'
+                          : 'bg-slate-100/60 border-slate-300 text-slate-500 hover:text-slate-800'
                       }`}
                     >
                       <Icon className="h-4 w-4" />
@@ -243,11 +243,11 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
               {/* PROGRESSIVE DISCLOSURE: PARTNER SELECTOR */}
               {fundingSource === 'PERSONAL_CAPITAL' && (
                 <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-2 animate-in fade-in">
-                  <label className="block text-xs font-semibold text-blue-400">Select Partner Investor</label>
+                  <label className="block text-xs font-semibold text-blue-600">Select Partner Investor</label>
                   <select
                     value={partnerId}
                     onChange={(e) => setPartnerId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500 transition"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-blue-500 transition"
                   >
                     {partners.map((pt) => (
                       <option key={pt.id} value={pt.id}>
@@ -255,7 +255,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500">
                     This investment of Rs. {totalCost.toLocaleString()} will be credited to the partner&apos;s investment ledger.
                   </p>
                 </div>
@@ -264,11 +264,11 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
               {/* PROGRESSIVE DISCLOSURE: SUPPLIER SELECTOR */}
               {fundingSource === 'CREDIT_SUPPLIER' && (
                 <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl space-y-2 animate-in fade-in">
-                  <label className="block text-xs font-semibold text-purple-400">Select Credit Supplier</label>
+                  <label className="block text-xs font-semibold text-purple-600">Select Credit Supplier</label>
                   <select
                     value={supplierId}
                     onChange={(e) => setSupplierId(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500 transition"
+                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-purple-500 transition"
                   >
                     {suppliers.map((sup) => (
                       <option key={sup.id} value={sup.id}>
@@ -276,7 +276,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-[11px] text-slate-500">
                     Rs. {totalCost.toLocaleString()} will be added to the supplier&apos;s outstanding payables balance.
                   </p>
                 </div>
@@ -285,12 +285,12 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
           )}
 
           {/* Footer Controls */}
-          <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
+          <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
             {step === 2 ? (
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl flex items-center gap-1 transition"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center gap-1 transition"
               >
                 <ArrowLeft className="h-4 w-4" /> Back
               </button>
@@ -298,7 +298,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-slate-800 text-slate-400 text-xs font-semibold rounded-xl"
+                className="px-4 py-2 bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl"
               >
                 Cancel
               </button>
@@ -308,7 +308,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
               <button
                 type="button"
                 onClick={handleNext}
-                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1 transition shadow-md"
+                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl flex items-center gap-1 transition shadow-md"
               >
                 Next <ArrowRight className="h-4 w-4" />
               </button>
@@ -316,7 +316,7 @@ export default function RestockWizard({ isOpen, onClose, onSuccess }: RestockWiz
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-lg disabled:opacity-50"
+                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition shadow-lg disabled:opacity-50"
               >
                 <Check className="h-4 w-4" />
                 {isSubmitting ? 'Restocking...' : 'Confirm Restock'}

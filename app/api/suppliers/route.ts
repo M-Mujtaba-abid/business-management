@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
     }
 
+    // Return the existing supplier if the same name (any case) already exists
+    const existing = await prisma.supplier.findFirst({
+      where: { name: { equals: name.trim(), mode: 'insensitive' } },
+    })
+    if (existing) return NextResponse.json(existing)
+
     const supplier = await prisma.supplier.create({
       data: {
         name: name.trim(),

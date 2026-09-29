@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +17,41 @@ export async function GET(request: NextRequest) {
       where.status = status as OrderStatus
     }
 
+    const categoryId = searchParams.get('categoryId')
+    const supplierId = searchParams.get('supplierId')
+    const supplierPayment = searchParams.get('supplierPayment')
+    const olderThanDays = parseInt(searchParams.get('olderThanDays') || '', 10)
+    const paymentSourceId = searchParams.get('paymentSourceId')
+    const paymentStatus = searchParams.get('paymentStatus')
+    const orderSourceId = searchParams.get('orderSourceId')
+    const receivedById = searchParams.get('receivedById')
+
+    if (categoryId) where.categoryId = categoryId
+    if (supplierId) where.supplierId = supplierId
+    if (supplierPayment === 'PENDING' || supplierPayment === 'PAID') {
+      where.supplierPaymentStatus = supplierPayment as SupplierPayment
+    }
+    if (receivedById === 'none') where.receivedById = null
+    else if (receivedById) where.receivedById = receivedById
+    if (orderSourceId === 'none') where.orderSourceId = null
+    else if (orderSourceId) where.orderSourceId = orderSourceId
+    if (paymentSourceId === 'none') where.paymentSourceId = null
+    else if (paymentSourceId) where.paymentSourceId = paymentSourceId
+    if (paymentStatus === 'NOT_RECEIVED' || paymentStatus === 'RECEIVED') {
+      where.paymentStatus = paymentStatus as CustomerPayment
+    }
+
     if (search) {
       where.OR = [
         { customerName: { contains: search, mode: 'insensitive' } },
         { productName: { contains: search, mode: 'insensitive' } },
         { city: { contains: search, mode: 'insensitive' } },
         { address: { contains: search, mode: 'insensitive' } },
+        { supplier: { name: { contains: search, mode: 'insensitive' } } },
+        { category: { name: { contains: search, mode: 'insensitive' } } },
+        { paymentSource: { name: { contains: search, mode: 'insensitive' } } },
+        { orderSource: { name: { contains: search, mode: 'insensitive' } } },
+        { receivedBy: { name: { contains: search, mode: 'insensitive' } } },
       ]
     }
 
@@ -70,6 +99,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // "Older than N days" (e.g. supplier payments pending for 15+ days)
+    if (!isNaN(olderThanDays) && olderThanDays > 0) {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - olderThanDays)
+      if (!dateFilter.lte || dateFilter.lte > cutoff) dateFilter.lte = cutoff
+    }
+
     if (dateFilter.gte || dateFilter.lte) {
       where.createdAt = dateFilter
     }
@@ -77,7 +113,7 @@ export async function GET(request: NextRequest) {
     const sales = await prisma.sale.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { product: true },
+      include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true },
     })
 
     return NextResponse.json(sales)
@@ -101,10 +137,24 @@ export async function POST(request: NextRequest) {
       soldPrice,
       deliveryCharge = 0,
       deductDeliveryOnReturn = true,
+      categoryId,
+      supplierId,
+      petrolCost = 0,
+      gstAmount = 0,
+      returnedItemId,
+      supplierPaymentStatus = 'PENDING',
+      paymentSourceId,
+      orderSourceId,
+      receivedById,
     } = body
 
-    if (!productName || !customerName || !address || !city || costPrice === undefined || soldPrice === undefined) {
-      return NextResponse.json({ error: 'Please provide all required order details.' }, { status: 400 })
+    // Customer details are optional in the quick order flow
+    const customer = (customerName || '').trim() || 'Walk-in'
+    const addr = (address || '').trim()
+    const cityName = (city || '').trim() || 'General'
+
+    if (!productName || !String(productName).trim() || costPrice === undefined || costPrice === '' || soldPrice === undefined || soldPrice === '') {
+      return NextResponse.json({ error: 'Product name, cost price and sale price are required.' }, { status: 400 })
     }
 
     const qty = parseInt(quantity, 10) || 1
@@ -112,31 +162,71 @@ export async function POST(request: NextRequest) {
     const sold_num = parseFloat(soldPrice)
     const delivery_num = parseFloat(deliveryCharge) || 0
 
+    if (isNaN(cost_num) || isNaN(sold_num)) {
+      return NextResponse.json({ error: 'Cost price and sale price must be numbers.' }, { status: 400 })
+    }
+
     // Auto-upsert City Delivery Rate
-    if (city.trim() && delivery_num > 0) {
+    if (cityName !== 'General' && delivery_num > 0) {
       await prisma.cityDeliveryRate.upsert({
-        where: { cityName: city.trim() },
+        where: { cityName },
         update: { deliveryFee: delivery_num },
-        create: { cityName: city.trim(), deliveryFee: delivery_num },
+        create: { cityName, deliveryFee: delivery_num },
       })
     }
 
-    // Default status is DISPATCHED. Profit realized = 0 while pending dispatch.
-    const sale = await prisma.sale.create({
-      data: {
-        productId: productId || null,
-        productName: productName.trim(),
-        customerName: customerName.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        quantity: qty,
-        costPrice: cost_num,
-        soldPrice: sold_num,
-        deliveryCharge: delivery_num,
-        profit: 0,
-        status: 'DISPATCHED',
-        deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
-      },
+    const sale = await prisma.$transaction(async (tx) => {
+      // A cover taken from returned stock was already paid for on its original order
+      if (returnedItemId) {
+        const item = await tx.returnedItem.findUnique({ where: { id: returnedItemId } })
+        if (!item || item.status !== 'AVAILABLE') {
+          throw new Error('This returned item is no longer available.')
+        }
+      }
+
+      const paymentStatus = returnedItemId
+        ? 'NOT_APPLICABLE'
+        : supplierPaymentStatus === 'PAID'
+        ? 'PAID'
+        : 'PENDING'
+
+      // Default status is DISPATCHED. Profit realized = 0 while pending dispatch.
+      const created = await tx.sale.create({
+        data: {
+          productId: productId || null,
+          productName: String(productName).trim(),
+          customerName: customer,
+          address: addr,
+          city: cityName,
+          quantity: qty,
+          costPrice: cost_num,
+          soldPrice: sold_num,
+          deliveryCharge: delivery_num,
+          petrolCost: parseFloat(petrolCost) || 0,
+          gstAmount: parseFloat(gstAmount) || 0,
+          categoryId: categoryId || null,
+          supplierId: returnedItemId ? null : supplierId || null,
+          returnedItemId: returnedItemId || null,
+          supplierPaymentStatus: paymentStatus,
+          supplierPaidAt: paymentStatus === 'PAID' ? new Date() : null,
+          paymentSourceId: paymentSourceId || null,
+          orderSourceId: orderSourceId || null,
+          receivedById: receivedById || null,
+          paymentStatus: 'NOT_RECEIVED',
+          profit: 0,
+          status: 'DISPATCHED',
+          deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
+        },
+      })
+
+      if (returnedItemId) {
+        await tx.returnedItem.update({
+          where: { id: returnedItemId },
+          data: { status: 'USED', usedInSaleId: created.id },
+        })
+      }
+
+      return created
     })
 
     return NextResponse.json(sale, { status: 201 })

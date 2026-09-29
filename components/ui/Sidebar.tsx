@@ -4,13 +4,13 @@ import React from 'react'
 import {
   LayoutDashboard,
   ShoppingCart,
-  Package,
+  // Package, // OLD INVENTORY FLOW (Inventory nav item)
   Receipt,
-  Users,
+  Wallet,
   Settings,
-  PlusCircle,
-  Sparkles,
-  RefreshCw,
+  // PlusCircle, // OLD INVENTORY FLOW (Restock button)
+  Plus,
+  // RefreshCw, // SEED DEMO DATA button
   X,
 } from 'lucide-react'
 
@@ -38,10 +38,10 @@ export default function Sidebar({
   currentSection,
   onSelectSection,
   onOpenNewDispatch,
-  onOpenRestock,
+  // onOpenRestock, // OLD INVENTORY FLOW (Restock button)
   onOpenExpense,
-  onSeedData,
-  isSeeding,
+  // onSeedData, // SEED DEMO DATA button
+  // isSeeding,
   isMobileOpen,
   onCloseMobile,
 }: SidebarProps) {
@@ -53,28 +53,29 @@ export default function Sidebar({
     },
     {
       id: 'orders' as NavSection,
-      label: 'Orders & Dispatches',
+      label: 'Orders',
       icon: ShoppingCart,
-      badge: null,
     },
+    {
+      id: 'partners-suppliers' as NavSection,
+      label: 'Payments',
+      icon: Wallet,
+    },
+    /* OLD INVENTORY FLOW — uncomment to restore
     {
       id: 'inventory' as NavSection,
       label: 'Inventory & Stock',
       icon: Package,
     },
+    */
     {
       id: 'finance' as NavSection,
-      label: 'Finance & Expenses',
+      label: 'Expenses',
       icon: Receipt,
     },
     {
-      id: 'partners-suppliers' as NavSection,
-      label: 'Partners & Suppliers',
-      icon: Users,
-    },
-    {
       id: 'settings' as NavSection,
-      label: 'Settings & Config',
+      label: 'Settings',
       icon: Settings,
     },
   ]
@@ -85,65 +86,66 @@ export default function Sidebar({
   }
 
   const sidebarContent = (
-    <div className="h-full flex flex-col justify-between bg-slate-900 border-r border-slate-800/80 text-slate-200 w-64 p-4">
+    <div className="h-full flex flex-col justify-between bg-white border-r border-slate-200 text-slate-800 w-60 p-4">
       <div className="space-y-6">
-        
+
         {/* Brand Header */}
         <div className="flex items-center justify-between px-2 pt-1">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <ShoppingCart className="h-5 w-5 text-slate-950 font-bold" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-xl bg-emerald-500 flex items-center justify-center shadow-sm">
+              <ShoppingCart className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-100 leading-none">Business ERP</h1>
-              <span className="text-[10px] text-emerald-400 font-medium tracking-wide">SaaS v2.0</span>
+              <h1 className="text-sm font-bold text-slate-900 leading-tight">Business Manager</h1>
+              <span className="text-[11px] text-slate-500">Orders & profit</span>
             </div>
           </div>
 
           {/* Mobile Close Button */}
-          <button onClick={onCloseMobile} className="lg:hidden p-1 text-slate-400 hover:text-white">
+          <button onClick={onCloseMobile} className="lg:hidden p-1 text-slate-500 hover:text-slate-900">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Quick Actions Drop-in */}
-        <div className="space-y-1.5 pt-2">
+        {/* Quick Actions */}
+        <div className="space-y-2">
           <button
             onClick={() => {
               onOpenNewDispatch()
               onCloseMobile()
             }}
-            className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition shadow-md shadow-emerald-500/10"
+            className="w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm flex items-center justify-center gap-2 transition shadow-sm"
           >
-            <Sparkles className="h-4 w-4" /> New Dispatch
+            <Plus className="h-4 w-4" /> New Order
           </button>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={() => {
-                onOpenRestock()
-                onCloseMobile()
-              }}
-              className="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[11px] flex items-center justify-center gap-1 border border-slate-700/60 transition"
-            >
-              <PlusCircle className="h-3.5 w-3.5 text-emerald-400" /> Restock
-            </button>
-            <button
-              onClick={() => {
-                onOpenExpense()
-                onCloseMobile()
-              }}
-              className="py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-[11px] flex items-center justify-center gap-1 border border-slate-700/60 transition"
-            >
-              <Receipt className="h-3.5 w-3.5 text-rose-400" /> Expense
-            </button>
-          </div>
+          {/* OLD INVENTORY FLOW — uncomment to restore
+          <button
+            onClick={() => {
+              onOpenRestock()
+              onCloseMobile()
+            }}
+            className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs flex items-center justify-center gap-1.5 border border-slate-200 transition"
+          >
+            <PlusCircle className="h-3.5 w-3.5 text-emerald-600" /> Restock
+          </button>
+          */}
+
+          <button
+            onClick={() => {
+              onOpenExpense()
+              onCloseMobile()
+            }}
+            className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-medium text-xs flex items-center justify-center gap-1.5 border border-slate-200 transition"
+          >
+            <Receipt className="h-3.5 w-3.5 text-rose-500" /> Add Expense
+          </button>
         </div>
 
-        {/* Navigation Section Links */}
-        <nav className="space-y-1 pt-2">
-          <div className="px-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Main Navigation
+        {/* Navigation */}
+        <nav className="space-y-1">
+          <div className="px-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            Menu
           </div>
           {navItems.map((item) => {
             const Icon = item.icon
@@ -152,35 +154,35 @@ export default function Sidebar({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
                   isActive
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`h-4 w-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                </div>
+                <Icon className={`h-4 w-4 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                <span>{item.label}</span>
               </button>
             )
           })}
         </nav>
       </div>
 
-      {/* Footer / Demo Seed Button */}
-      <div className="pt-4 border-t border-slate-800/80 space-y-2">
+      {/* Footer */}
+      <div className="pt-4 border-t border-slate-100 space-y-2">
+        {/* SEED DEMO DATA — uncomment to restore
         <button
           onClick={onSeedData}
           disabled={isSeeding}
-          className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700/80 text-slate-400 hover:text-slate-200 rounded-xl text-xs flex items-center justify-center gap-2 transition border border-slate-700/50"
+          className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-xl text-xs flex items-center justify-center gap-2 transition border border-slate-200"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isSeeding ? 'animate-spin' : ''}`} />
           <span>{isSeeding ? 'Seeding...' : 'Seed Demo Data'}</span>
         </button>
+        */}
 
-        <div className="text-[10px] text-slate-500 text-center">
-          Connected to Neon Database
+        <div className="text-[10px] text-slate-400 text-center">
+          Connected to database
         </div>
       </div>
     </div>
@@ -196,7 +198,7 @@ export default function Sidebar({
       {/* Mobile Drawer Sheet */}
       {isMobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={onCloseMobile} />
+          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onCloseMobile} />
           <div className="fixed inset-y-0 left-0 z-50 animate-in slide-in-from-left duration-200">
             {sidebarContent}
           </div>

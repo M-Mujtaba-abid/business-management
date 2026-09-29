@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Sidebar, { NavSection } from './Sidebar'
-import { Menu, Calendar, Sparkles } from 'lucide-react'
+import { Menu, Calendar, Plus } from 'lucide-react'
 
 interface AppShellProps {
   currentSection: NavSection
@@ -42,19 +42,36 @@ export default function AppShell({
   const getSectionTitle = () => {
     switch (currentSection) {
       case 'dashboard':
-        return 'Business Health Overview'
+        return 'Dashboard'
       case 'orders':
-        return 'Orders & Dispatches'
+        return 'Orders'
       case 'inventory':
         return 'Inventory & Product Catalog'
       case 'finance':
-        return 'Financial Expenses & P&L'
+        return 'Expenses'
       case 'partners-suppliers':
-        return 'Partner Investments & Supplier Payables'
+        return 'Payments'
       case 'settings':
-        return 'Settings & Delivery Rates'
+        return 'Settings'
       default:
         return 'Dashboard'
+    }
+  }
+
+  const getSectionSubtitle = () => {
+    switch (currentSection) {
+      case 'dashboard':
+        return 'Sales, profit and what needs attention'
+      case 'orders':
+        return 'Track every order from dispatch to delivery'
+      case 'finance':
+        return 'General business costs like ads and packaging'
+      case 'partners-suppliers':
+        return 'Who has the money, what is still to come, and what you owe suppliers'
+      case 'settings':
+        return 'Categories and delivery rates'
+      default:
+        return ''
     }
   }
 
@@ -119,7 +136,7 @@ export default function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex selection:bg-emerald-500 selection:text-white">
       
       {/* Responsive Sidebar */}
       <Sidebar
@@ -138,17 +155,17 @@ export default function AppShell({
       <div className="flex-1 flex flex-col min-w-0">
         
         {/* Top Navbar */}
-        <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsMobileOpen(true)}
-              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+              className="lg:hidden p-2 rounded-xl bg-slate-100 text-slate-700 hover:text-slate-900"
             >
               <Menu className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-100">{getSectionTitle()}</h1>
-              <p className="text-[11px] text-slate-400 hidden sm:block">Real-time financial analytics & dispatch operations</p>
+              <h1 className="text-base sm:text-lg font-bold text-slate-900">{getSectionTitle()}</h1>
+              <p className="text-[11px] text-slate-500 hidden sm:block">{getSectionSubtitle()}</p>
             </div>
           </div>
 
@@ -156,8 +173,8 @@ export default function AppShell({
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
             
             {/* Filter Bar */}
-            <div className="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 rounded-xl p-1 text-xs overflow-x-auto flex-wrap">
-              <Calendar className="h-3.5 w-3.5 text-slate-400 ml-1.5 mr-1 hidden md:block shrink-0" />
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 text-xs overflow-x-auto flex-wrap">
+              <Calendar className="h-3.5 w-3.5 text-slate-500 ml-1.5 mr-1 hidden md:block shrink-0" />
               
               {/* Quick Presets */}
               {[
@@ -170,22 +187,22 @@ export default function AppShell({
                   onClick={() => handlePresetChange(btn.value)}
                   className={`px-2 py-1 rounded-lg transition font-medium text-[11px] whitespace-nowrap ${
                     dateRange === btn.value && !startDate && !endDate
-                      ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-emerald-500 text-white font-semibold shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   {btn.label}
                 </button>
               ))}
 
-              <div className="h-4 w-px bg-slate-700/80 mx-0.5 hidden sm:block" />
+              <div className="h-4 w-px bg-slate-200/80 mx-0.5 hidden sm:block" />
 
               {/* Month Dropdown */}
               <select
                 value={selectedMonth}
                 onChange={(e) => handleMonthChange(e.target.value)}
-                className={`bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-semibold transition focus:outline-none focus:border-emerald-500 ${
-                  (dateRange.includes('-') || dateRange === 'month') && !startDate && !endDate ? 'text-emerald-400 border-emerald-500/50' : 'text-slate-300'
+                className={`bg-white border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-semibold transition focus:outline-none focus:border-emerald-500 ${
+                  (dateRange.includes('-') || dateRange === 'month') && !startDate && !endDate ? 'text-emerald-600 border-emerald-500/50' : 'text-slate-700'
                 }`}
               >
                 {monthsList.map((m) => (
@@ -199,7 +216,7 @@ export default function AppShell({
               <select
                 value={selectedYear}
                 onChange={(e) => handleYearChange(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-300 transition focus:outline-none focus:border-emerald-500"
+                className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-700 transition focus:outline-none focus:border-emerald-500"
               >
                 {yearsList.map((y) => (
                   <option key={y} value={y}>
@@ -208,27 +225,27 @@ export default function AppShell({
                 ))}
               </select>
 
-              <div className="h-4 w-px bg-slate-700/80 mx-0.5 hidden sm:block" />
+              <div className="h-4 w-px bg-slate-200/80 mx-0.5 hidden sm:block" />
 
               {/* Custom Date Inputs (Start & End Date) */}
-              <div className="flex items-center gap-1 bg-slate-950/70 border border-slate-700/80 rounded-lg px-2 py-0.5">
-                <span className="text-[10px] text-slate-400 font-semibold">From:</span>
+              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5">
+                <span className="text-[10px] text-slate-500 font-semibold">From:</span>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => {
                     if (setStartDate) setStartDate(e.target.value)
                   }}
-                  className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark] w-24 sm:w-auto"
+                  className="bg-transparent text-[11px] text-emerald-600 font-mono focus:outline-none w-24 sm:w-auto"
                 />
-                <span className="text-[10px] text-slate-400 font-semibold">To:</span>
+                <span className="text-[10px] text-slate-500 font-semibold">To:</span>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => {
                     if (setEndDate) setEndDate(e.target.value)
                   }}
-                  className="bg-transparent text-[11px] text-emerald-400 font-mono focus:outline-none [color-scheme:dark] w-24 sm:w-auto"
+                  className="bg-transparent text-[11px] text-emerald-600 font-mono focus:outline-none w-24 sm:w-auto"
                 />
                 {(startDate || endDate) && (
                   <button
@@ -237,7 +254,7 @@ export default function AppShell({
                       if (setEndDate) setEndDate('')
                       setDateRange('all')
                     }}
-                    className="text-slate-400 hover:text-rose-400 text-xs ml-1 font-bold transition"
+                    className="text-slate-500 hover:text-rose-600 text-xs ml-1 font-bold transition"
                     title="Clear custom date filter"
                   >
                     ✕
@@ -249,9 +266,9 @@ export default function AppShell({
             {/* Quick Order Button */}
             <button
               onClick={onOpenNewDispatch}
-              className="hidden sm:flex px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs items-center gap-1.5 transition shadow-md shadow-emerald-500/10"
+              className="hidden sm:flex px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs items-center gap-1.5 transition shadow-md shadow-emerald-500/10"
             >
-              <Sparkles className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" />
               <span>New Order</span>
             </button>
           </div>
@@ -263,8 +280,8 @@ export default function AppShell({
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-slate-800/60 py-4 px-6 text-center text-[11px] text-slate-500">
-          Business Manager ERP v2.0 • Powered by Next.js 14, Prisma & Neon PostgreSQL
+        <footer className="border-t border-slate-200 py-4 px-6 text-center text-[11px] text-slate-500">
+          Business Manager
         </footer>
 
       </div>

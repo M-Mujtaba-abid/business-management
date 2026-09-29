@@ -9,9 +9,11 @@ export async function PATCH(
   try {
     const { id } = params
     const body = await request.json()
-    const { status, deductDeliveryOnReturn } = body as {
+    const { status, deductDeliveryOnReturn, returnLoss, coverReturned } = body as {
       status: OrderStatus
       deductDeliveryOnReturn?: boolean
+      returnLoss?: number | string
+      coverReturned?: boolean
     }
 
     const existingSale = await prisma.sale.findUnique({
@@ -30,10 +32,15 @@ export async function PATCH(
         : existingSale.deductDeliveryOnReturn
 
     let calculatedProfit = 0
+    let savedReturnLoss = 0
 
     if (targetStatus === 'DELIVERED') {
-      // Delivered: Cash realized. profit = (soldPrice - costPrice) * quantity
-      calculatedProfit = (existingSale.soldPrice - existingSale.costPrice) * existingSale.quantity
+      // Delivered: Cash realized. profit = (soldPrice - costPrice) * quantity - DC - petrol - GST
+      calculatedProfit =
+        (existingSale.soldPrice - existingSale.costPrice) * existingSale.quantity -
+        existingSale.deliveryCharge -
+        existingSale.petrolCost -
+        existingSale.gstAmount
 
       // Stock deduction if moving to DELIVERED from non-DELIVERED
       if (prevStatus !== 'DELIVERED' && existingSale.productId) {
@@ -47,8 +54,15 @@ export async function PATCH(
         })
       }
     } else if (targetStatus === 'RETURNED') {
-      // Returned: If deductDeliveryOnReturn == true, profit = -deliveryCharge
-      calculatedProfit = shouldDeductLoss ? -existingSale.deliveryCharge : 0
+      // Returned: loss entered by the user (DC, petrol, damaged cover...). Falls back to the
+      // old behaviour (delivery charge as loss) when no amount is sent.
+      const lossNum = returnLoss !== undefined ? parseFloat(String(returnLoss)) : NaN
+      savedReturnLoss = !isNaN(lossNum)
+        ? Math.max(0, lossNum)
+        : shouldDeductLoss
+        ? existingSale.deliveryCharge
+        : 0
+      calculatedProfit = -savedReturnLoss
 
       // Replenish stock if moving from DELIVERED to RETURNED
       if (prevStatus === 'DELIVERED' && existingSale.productId) {
@@ -78,13 +92,36 @@ export async function PATCH(
       }
     }
 
-    const updatedSale = await prisma.sale.update({
-      where: { id },
-      data: {
-        status: targetStatus,
-        profit: calculatedProfit,
-        deductDeliveryOnReturn: shouldDeductLoss,
-      },
+    const updatedSale = await prisma.$transaction(async (tx) => {
+      // Leaving RETURNED: drop the returned-stock entry it created (if not already reused)
+      if (prevStatus === 'RETURNED' && targetStatus !== 'RETURNED') {
+        await tx.returnedItem.deleteMany({
+          where: { sourceSaleId: id, status: 'AVAILABLE' },
+        })
+      }
+
+      // Entering RETURNED with the cover back in hand: add it to returned stock
+      if (targetStatus === 'RETURNED' && prevStatus !== 'RETURNED' && coverReturned) {
+        await tx.returnedItem.create({
+          data: {
+            productName: existingSale.productName,
+            categoryId: existingSale.categoryId,
+            costPrice: existingSale.costPrice,
+            quantity: existingSale.quantity,
+            sourceSaleId: id,
+          },
+        })
+      }
+
+      return tx.sale.update({
+        where: { id },
+        data: {
+          status: targetStatus,
+          profit: calculatedProfit,
+          returnLoss: savedReturnLoss,
+          deductDeliveryOnReturn: shouldDeductLoss,
+        },
+      })
     })
 
     return NextResponse.json(updatedSale)
@@ -121,8 +158,23 @@ export async function DELETE(
       })
     }
 
-    await prisma.sale.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      // The cover this order took from returned stock goes back to returned stock
+      if (existingSale.returnedItemId) {
+        await tx.returnedItem.updateMany({
+          where: { id: existingSale.returnedItemId, usedInSaleId: id },
+          data: { status: 'AVAILABLE', usedInSaleId: null },
+        })
+      }
+
+      // Returned stock created by this order disappears with it (unless already reused)
+      await tx.returnedItem.deleteMany({
+        where: { sourceSaleId: id, status: 'AVAILABLE' },
+      })
+
+      await tx.sale.delete({
+        where: { id },
+      })
     })
 
     return NextResponse.json({ success: true })

@@ -29,6 +29,23 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum SupplierPayment {
+  PENDING
+  PAID
+  NOT_APPLICABLE
+}
+
+enum CustomerPayment {
+  NOT_RECEIVED
+  RECEIVED
+  NOT_APPLICABLE
+}
+
+enum ReturnedItemStatus {
+  AVAILABLE
+  USED
+}
+
 model Expense {
   id            String          @id @default(cuid())
   title         String          @default("General Expense")
@@ -78,6 +95,60 @@ model Supplier {
   updatedAt     DateTime            @updatedAt
 
   purchases     InventoryPurchase[]
+  sales         Sale[]
+}
+
+model Category {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  createdAt     DateTime       @default(now())
+
+  sales         Sale[]
+  returnedItems ReturnedItem[]
+}
+
+// Person whose account the order money lands in (Mujtaba, Noman, ...)
+model Person {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  sales     Sale[]
+}
+
+// Where the order came from (Daraz, Website, OLX, Marketplace, ...)
+model OrderSource {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  sales     Sale[]
+}
+
+// Who pays us for an order (Daraz, Leopards courier COD, ...)
+model PaymentSource {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  sales     Sale[]
+}
+
+model ReturnedItem {
+  id           String             @id @default(cuid())
+  productName  String
+  categoryId   String?
+  costPrice    Float              @default(0)
+  quantity     Int                @default(1)
+  sourceSaleId String
+  usedInSaleId String?
+  status       ReturnedItemStatus @default(AVAILABLE)
+  createdAt    DateTime           @default(now())
+
+  category     Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([sourceSaleId])
 }
 
 model InventoryPurchase {
@@ -110,14 +181,39 @@ model Sale {
   profit                 Float       @default(0)
   status                 OrderStatus @default(DISPATCHED)
   deductDeliveryOnReturn Boolean     @default(true)
+  categoryId             String?
+  supplierId             String?
+  petrolCost             Float       @default(0)
+  gstAmount              Float       @default(0)
+  returnLoss             Float       @default(0)
+  returnedItemId         String?
+  supplierPaymentStatus  SupplierPayment @default(PENDING)
+  supplierPaidAt         DateTime?
+  paymentSourceId        String?
+  orderSourceId          String?
+  receivedById           String?
+  paymentStatus          CustomerPayment @default(NOT_RECEIVED)
+  paymentReceivedAt      DateTime?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
   product                Product?    @relation(fields: [productId], references: [id])
+  category               Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier               Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  paymentSource          PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: SetNull)
+  orderSource            OrderSource?   @relation(fields: [orderSourceId], references: [id], onDelete: SetNull)
+  receivedBy             Person?        @relation(fields: [receivedById], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([city])
   @@index([status])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([supplierPaymentStatus])
+  @@index([paymentSourceId])
+  @@index([paymentStatus])
+  @@index([orderSourceId])
+  @@index([receivedById])
 }
 
 model CityDeliveryRate {

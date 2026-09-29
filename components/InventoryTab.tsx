@@ -73,19 +73,19 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
   const getStockBadge = (qty: number) => {
     if (qty >= 5) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
           <CheckCircle2 className="h-3 w-3" /> In Stock ({qty})
         </span>
       )
     } else if (qty > 0) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
           <AlertTriangle className="h-3 w-3" /> Low Stock ({qty})
         </span>
       )
     } else {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 border border-rose-500/20">
           <XCircle className="h-3 w-3" /> Out of Stock (0)
         </span>
       )
@@ -96,24 +96,24 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
     <div className="space-y-6">
       
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 p-5 rounded-2xl">
         <div>
-          <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <Package className="h-5 w-5 text-emerald-400" />
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Package className="h-5 w-5 text-emerald-600" />
             Inventory & Stock Catalog
           </h2>
-          <p className="text-xs text-slate-400">Track current stock levels, cost prices, and margins</p>
+          <p className="text-xs text-slate-500">Track current stock levels, cost prices, and margins</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowAddModal(true)}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium rounded-lg transition"
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-medium rounded-lg transition"
           >
             + Create New Product
           </button>
           <button
             onClick={onOpenRestock}
-            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs rounded-lg transition shadow-md shadow-emerald-500/10"
+            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition shadow-md shadow-emerald-500/10"
           >
             + Buy Inventory / Restock
           </button>
@@ -121,23 +121,23 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
       </div>
 
       {/* Catalog Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl">
         {isLoading ? (
           <div className="space-y-3">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-14 bg-slate-800/40 rounded-xl animate-pulse" />
+              <div key={i} className="h-14 bg-slate-100/40 rounded-xl animate-pulse" />
             ))}
           </div>
         ) : products.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-slate-800 rounded-xl">
-            <Package className="h-10 w-10 text-slate-600 mx-auto mb-2" />
-            <p className="text-slate-400 text-sm font-medium">No products in catalog</p>
+          <div className="p-12 text-center border border-dashed border-slate-200 rounded-xl">
+            <Package className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+            <p className="text-slate-500 text-sm font-medium">No products in catalog</p>
             <p className="text-slate-500 text-xs mt-1">Add products to track inventory and auto-populate pricing.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50/60 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Product Name</th>
                   <th className="px-4 py-3">Unit Cost Price</th>
@@ -147,22 +147,22 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-100/60">
                 {products.map((p) => {
                   const margin = p.salePrice - p.costPrice
                   return (
-                    <tr key={p.id} className="hover:bg-slate-800/40 transition">
-                      <td className="px-4 py-3.5 font-bold text-slate-100">{p.name}</td>
-                      <td className="px-4 py-3.5 font-mono text-slate-300">Rs. {p.costPrice.toLocaleString()}</td>
-                      <td className="px-4 py-3.5 font-mono text-emerald-400 font-semibold">Rs. {p.salePrice.toLocaleString()}</td>
-                      <td className="px-4 py-3.5 font-mono font-bold text-teal-400">
+                    <tr key={p.id} className="hover:bg-slate-100/40 transition">
+                      <td className="px-4 py-3.5 font-bold text-slate-900">{p.name}</td>
+                      <td className="px-4 py-3.5 font-mono text-slate-700">Rs. {p.costPrice.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 font-mono text-emerald-600 font-semibold">Rs. {p.salePrice.toLocaleString()}</td>
+                      <td className="px-4 py-3.5 font-mono font-bold text-teal-600">
                         +Rs. {margin.toLocaleString()} ({((margin / (p.costPrice || 1)) * 100).toFixed(0)}%)
                       </td>
                       <td className="px-4 py-3.5">{getStockBadge(p.stockQty)}</td>
                       <td className="px-4 py-3.5 text-right">
                         <button
                           onClick={onOpenRestock}
-                          className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-md font-semibold text-[11px] border border-emerald-500/20 transition"
+                          className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-md font-semibold text-[11px] border border-emerald-500/20 transition"
                         >
                           Restock
                         </button>
@@ -178,25 +178,25 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
 
       {/* Modal to Add New Product */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900">
             <h3 className="font-bold text-lg">Create New Catalog Product</h3>
             <form onSubmit={handleCreateProduct} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Product Name *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Product Name *</label>
                 <input
                   type="text"
                   required
                   value={newProdName}
                   onChange={(e) => setNewProdName(e.target.value)}
                   placeholder="e.g. Waterproof Bike Cover"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Cost Price (Rs) *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Cost Price (Rs) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -204,11 +204,11 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
                     value={newCostPrice}
                     onChange={(e) => setNewCostPrice(e.target.value)}
                     placeholder="1200"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Sale Price (Rs) *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sale Price (Rs) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -216,18 +216,18 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
                     value={newSalePrice}
                     onChange={(e) => setNewSalePrice(e.target.value)}
                     placeholder="2200"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Initial Stock Qty</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Stock Qty</label>
                 <input
                   type="number"
                   value={newStockQty}
                   onChange={(e) => setNewStockQty(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
@@ -235,14 +235,14 @@ export default function InventoryTab({ onOpenRestock }: InventoryTabProps) {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs"
+                  className="px-4 py-2 bg-emerald-500 text-white font-bold rounded-lg text-xs"
                 >
                   Save Product
                 </button>

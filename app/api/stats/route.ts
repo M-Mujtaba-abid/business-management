@@ -63,9 +63,16 @@ export async function GET(request: NextRequest) {
     const totalRevenue = deliveredSales.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
     const grossProfit = deliveredSales.reduce((acc, s) => acc + s.profit, 0)
 
-    // Returned Sales with loss absorbed
-    const returnedLossSales = sales.filter((s) => s.status === 'RETURNED' && s.deductDeliveryOnReturn)
-    const returnLoss = returnedLossSales.reduce((acc, s) => acc + s.deliveryCharge, 0)
+    // Order-level costs on delivered sales (already subtracted inside each sale's profit)
+    const orderExpenses = deliveredSales.reduce(
+      (acc, s) => acc + s.deliveryCharge + s.petrolCost + s.gstAmount,
+      0
+    )
+
+    // Returned Sales: a returned order's profit is stored as -(loss), for old and new orders alike
+    const returnLoss = sales
+      .filter((s) => s.status === 'RETURNED' && s.profit < 0)
+      .reduce((acc, s) => acc + -s.profit, 0)
 
     // Active Dispatches
     const activeDispatches = sales.filter((s) => s.status === 'DISPATCHED').length
@@ -93,7 +100,29 @@ export async function GET(request: NextRequest) {
     })
     const totalSupplierDebt = suppliers.reduce((acc, sup) => acc + sup.unpaidBalance, 0)
 
+    // Market supplier payables (all time, not date filtered: debt is owed regardless of period)
+    const pendingSupplierSales = await prisma.sale.findMany({
+      where: { supplierPaymentStatus: 'PENDING' },
+      select: { costPrice: true, quantity: true },
+    })
+    const supplierPendingTotal = pendingSupplierSales.reduce((acc, s) => acc + s.costPrice * s.quantity, 0)
+
+    const returnedItemsCount = await prisma.returnedItem.count({ where: { status: 'AVAILABLE' } })
+
+    // Money still to come in from Daraz / courier / others for delivered orders (all time)
+    const unpaidDelivered = await prisma.sale.findMany({
+      where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
+      select: { soldPrice: true, quantity: true },
+    })
+    const receivablePendingTotal = unpaidDelivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
+    const receivablePendingCount = unpaidDelivered.length
+
     return NextResponse.json({
+      orderExpenses,
+      supplierPendingTotal,
+      returnedItemsCount,
+      receivablePendingTotal,
+      receivablePendingCount,
       totalRevenue,
       grossProfit,
       returnLoss,

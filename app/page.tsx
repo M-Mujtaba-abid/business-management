@@ -4,16 +4,22 @@ import { useState, useEffect, useCallback } from 'react'
 import AppShell from '@/components/ui/AppShell'
 import { NavSection } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
-import OrderList, { Sale } from '@/components/OrderList'
+import OrderList, { Sale, OrderFilters, EMPTY_ORDER_FILTERS } from '@/components/OrderList'
 import OrderDetailsDrawer from '@/components/ui/OrderDetailsDrawer'
+/* OLD INVENTORY FLOW — uncomment to restore
 import NewDispatchWizard from '@/components/ui/NewDispatchWizard'
 import RestockWizard from '@/components/ui/RestockWizard'
+import InventoryTab from '@/components/InventoryTab'
+*/
+import QuickOrderForm from '@/components/ui/QuickOrderForm'
+import SupplierPaymentsTab from '@/components/SupplierPaymentsTab'
+import ReceivablesTab from '@/components/ReceivablesTab'
+import PeopleMoneyTab from '@/components/PeopleMoneyTab'
 import ExpenseWizard from '@/components/ui/ExpenseWizard'
 import MarkReturnedModal from '@/components/MarkReturnedModal'
-import InventoryTab from '@/components/InventoryTab'
 import ExpensesTab from '@/components/ExpensesTab'
 import CityRatesTab from '@/components/CityRatesTab'
-import LedgerTab from '@/components/LedgerTab'
+// import LedgerTab from '@/components/LedgerTab' // PARTNERS LEDGER — uncomment to restore
 import { Toaster, toast } from 'sonner'
 
 export default function Home() {
@@ -23,10 +29,11 @@ export default function Home() {
   const [endDate, setEndDate] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [orderFilters, setOrderFilters] = useState<OrderFilters>(EMPTY_ORDER_FILTERS)
 
   // State Data
   const [sales, setSales] = useState<Sale[]>([])
-  const [lowStockCount, setLowStockCount] = useState<number>(0)
+  const [lowStockCount] = useState<number>(0) // OLD INVENTORY FLOW: was [lowStockCount, setLowStockCount]
   const [stats, setStats] = useState({
     totalRevenue: 0,
     grossProfit: 0,
@@ -38,6 +45,11 @@ export default function Home() {
     totalOrdersCount: 0,
     partners: [],
     totalSupplierDebt: 0,
+    supplierPendingTotal: 0,
+    returnedItemsCount: 0,
+    orderExpenses: 0,
+    receivablePendingTotal: 0,
+    receivablePendingCount: 0,
   })
 
   // Loading States
@@ -47,7 +59,7 @@ export default function Home() {
 
   // Modals & Drawers
   const [isNewDispatchOpen, setIsNewDispatchOpen] = useState(false)
-  const [isRestockOpen, setIsRestockOpen] = useState(false)
+  const [, setIsRestockOpen] = useState(false) // OLD INVENTORY FLOW: was [isRestockOpen, setIsRestockOpen]
   const [isExpenseOpen, setIsExpenseOpen] = useState(false)
   const [selectedDrawerSale, setSelectedDrawerSale] = useState<Sale | null>(null)
   const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
@@ -81,6 +93,14 @@ export default function Home() {
       if (searchQuery) {
         url += `&search=${encodeURIComponent(searchQuery)}`
       }
+      if (orderFilters.categoryId) url += `&categoryId=${orderFilters.categoryId}`
+      if (orderFilters.supplierId) url += `&supplierId=${orderFilters.supplierId}`
+      if (orderFilters.supplierPayment) url += `&supplierPayment=${orderFilters.supplierPayment}`
+      if (orderFilters.olderThanDays) url += `&olderThanDays=${orderFilters.olderThanDays}`
+      if (orderFilters.receivedById) url += `&receivedById=${orderFilters.receivedById}`
+      if (orderFilters.orderSourceId) url += `&orderSourceId=${orderFilters.orderSourceId}`
+      if (orderFilters.paymentSourceId) url += `&paymentSourceId=${orderFilters.paymentSourceId}`
+      if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
@@ -91,8 +111,9 @@ export default function Home() {
     } finally {
       setIsSalesLoading(false)
     }
-  }, [dateRange, statusFilter, searchQuery, startDate, endDate])
+  }, [dateRange, statusFilter, searchQuery, startDate, endDate, orderFilters])
 
+  /* OLD INVENTORY FLOW — uncomment to restore (and add fetchLowStockCount back to refreshAll)
   // Fetch Low Stock Count for Alert
   const fetchLowStockCount = useCallback(async () => {
     try {
@@ -108,13 +129,13 @@ export default function Home() {
       console.error(err)
     }
   }, [])
+  */
 
   // Trigger Refresh
   const refreshAll = useCallback(() => {
     fetchStats()
     fetchSales()
-    fetchLowStockCount()
-  }, [fetchStats, fetchSales, fetchLowStockCount])
+  }, [fetchStats, fetchSales])
 
   useEffect(() => {
     refreshAll()
@@ -140,12 +161,16 @@ export default function Home() {
   }
 
   // Handle Quick Order Status Change
-  const handleUpdateStatus = async (id: string, status: string, deductDeliveryOnReturn?: boolean) => {
+  const handleUpdateStatus = async (
+    id: string,
+    status: string,
+    extra?: { returnLoss?: number; coverReturned?: boolean }
+  ) => {
     try {
       const res = await fetch(`/api/sales/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, deductDeliveryOnReturn }),
+        body: JSON.stringify({ status, ...extra }),
       })
 
       if (!res.ok) {
@@ -157,6 +182,63 @@ export default function Home() {
       refreshAll()
     } catch (err: any) {
       toast.error(err.message || 'Failed to update status')
+    }
+  }
+
+  // Mark money from Daraz / courier / other as Received / Not received
+  const handleSetCustomerPayment = async (saleIds: string[], status: 'RECEIVED' | 'NOT_RECEIVED') => {
+    try {
+      const res = await fetch('/api/sales/customer-payment', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saleIds, status }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update payment')
+      }
+      toast.success(status === 'RECEIVED' ? 'Payment marked as received' : 'Payment marked as not received')
+      refreshAll()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update payment')
+    }
+  }
+
+  // Change whose account the order money goes to
+  const handleSetReceivedBy = async (saleIds: string[], personId: string | null) => {
+    try {
+      const res = await fetch('/api/sales/customer-payment', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saleIds, receivedById: personId }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update person')
+      }
+      toast.success('Updated who receives the money')
+      refreshAll()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update person')
+    }
+  }
+
+  // Mark supplier payment Paid / Pending for one or many orders
+  const handleSetSupplierPayment = async (saleIds: string[], status: 'PAID' | 'PENDING') => {
+    try {
+      const res = await fetch('/api/sales/supplier-payment', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saleIds, status }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to update supplier payment')
+      }
+      toast.success(status === 'PAID' ? 'Supplier payment marked Paid' : 'Supplier payment marked Pending')
+      refreshAll()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update supplier payment')
     }
   }
 
@@ -194,7 +276,7 @@ export default function Home() {
       onSeedData={handleSeedData}
       isSeeding={isSeeding}
     >
-      <Toaster position="top-right" theme="dark" richColors />
+      <Toaster position="top-right" theme="light" richColors />
 
       {/* Render Active View */}
       {activeSection === 'dashboard' && (
@@ -208,6 +290,7 @@ export default function Home() {
           onOpenExpense={() => setIsExpenseOpen(true)}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
           onViewAllOrders={() => setActiveSection('orders')}
+          onViewSupplierPayments={() => setActiveSection('partners-suppliers')}
         />
       )}
 
@@ -224,19 +307,54 @@ export default function Home() {
           endDate={endDate}
           setEndDate={setEndDate}
           setDateRange={setDateRange}
+          filters={orderFilters}
+          setFilters={setOrderFilters}
+          onSetSupplierPayment={handleSetSupplierPayment}
+          onSetCustomerPayment={handleSetCustomerPayment}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
         />
       )}
 
+      {/* OLD INVENTORY FLOW — uncomment to restore
       {activeSection === 'inventory' && (
         <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
       )}
+      */}
 
       {activeSection === 'finance' && (
         <ExpensesTab onOpenExpenseModal={() => setIsExpenseOpen(true)} />
       )}
 
-      {activeSection === 'partners-suppliers' && <LedgerTab />}
+      {activeSection === 'partners-suppliers' && (
+        <div className="space-y-6">
+          <PeopleMoneyTab
+            onViewOrders={(receivedById) => {
+              setOrderFilters({ ...EMPTY_ORDER_FILTERS, receivedById })
+              setStatusFilter('ALL')
+              setActiveSection('orders')
+            }}
+          />
+          <ReceivablesTab
+            onChanged={refreshAll}
+            onViewOrders={(paymentSourceId) => {
+              setOrderFilters({ ...EMPTY_ORDER_FILTERS, paymentSourceId, paymentStatus: 'NOT_RECEIVED' })
+              setStatusFilter('DELIVERED')
+              setActiveSection('orders')
+            }}
+          />
+          <SupplierPaymentsTab
+            onChanged={refreshAll}
+            onViewOrders={(supplierId) => {
+              setOrderFilters({ ...EMPTY_ORDER_FILTERS, supplierId, supplierPayment: 'PENDING' })
+              setStatusFilter('ALL')
+              setActiveSection('orders')
+            }}
+          />
+          {/* PARTNERS LEDGER — uncomment to restore
+          <LedgerTab />
+          */}
+        </div>
+      )}
 
       {activeSection === 'settings' && <CityRatesTab />}
 
@@ -248,9 +366,22 @@ export default function Home() {
         onUpdateStatus={handleUpdateStatus}
         onOpenReturnModal={(sale) => setReturnModalSale(sale)}
         onDeleteSale={handleDeleteSale}
+        onSetSupplierPayment={handleSetSupplierPayment}
+        onSetCustomerPayment={handleSetCustomerPayment}
+        onSetReceivedBy={handleSetReceivedBy}
       />
 
       {/* Guided Step-by-Step Wizards & Modals */}
+      <QuickOrderForm
+        isOpen={isNewDispatchOpen}
+        onClose={() => setIsNewDispatchOpen(false)}
+        onSuccess={() => {
+          toast.success('Order saved!')
+          refreshAll()
+        }}
+      />
+
+      {/* OLD INVENTORY FLOW — uncomment to restore
       <NewDispatchWizard
         isOpen={isNewDispatchOpen}
         onClose={() => setIsNewDispatchOpen(false)}
@@ -268,6 +399,7 @@ export default function Home() {
           refreshAll()
         }}
       />
+      */}
 
       <ExpenseWizard
         isOpen={isExpenseOpen}
@@ -282,8 +414,8 @@ export default function Home() {
         isOpen={Boolean(returnModalSale)}
         sale={returnModalSale}
         onClose={() => setReturnModalSale(null)}
-        onConfirm={(saleId, deductLoss) => {
-          handleUpdateStatus(saleId, 'RETURNED', deductLoss)
+        onConfirm={(saleId, returnLoss, coverReturned) => {
+          handleUpdateStatus(saleId, 'RETURNED', { returnLoss, coverReturned })
           setReturnModalSale(null)
         }}
       />

@@ -315,8 +315,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
     }`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 flex flex-col max-h-[94dvh] sm:max-h-[92vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200">
@@ -334,7 +334,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="px-4 pt-4 sm:px-5 sm:pt-5 space-y-4 overflow-y-auto">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">{error}</div>
           )}
@@ -606,36 +606,36 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
             </label>
             <div className="grid grid-cols-3 gap-3">
               <div className="relative">
-                <Truck className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <Truck className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
                   type="number"
                   step="0.01"
                   value={form.deliveryCharge}
                   onChange={(e) => set('deliveryCharge', e.target.value)}
                   placeholder="DC"
-                  className={`${inputClass} pl-9`}
+                  className={`${inputClass} sm:pl-9`}
                 />
               </div>
               <div className="relative">
-                <Fuel className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <Fuel className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
                   type="number"
                   step="0.01"
                   value={form.petrolCost}
                   onChange={(e) => set('petrolCost', e.target.value)}
                   placeholder="Petrol"
-                  className={`${inputClass} pl-9`}
+                  className={`${inputClass} sm:pl-9`}
                 />
               </div>
               <div className="relative">
-                <Receipt className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                <Receipt className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
                 <input
                   type="number"
                   step="0.01"
                   value={form.gstAmount}
                   onChange={(e) => set('gstAmount', e.target.value)}
                   placeholder="GST"
-                  className={`${inputClass} pl-9`}
+                  className={`${inputClass} sm:pl-9`}
                 />
               </div>
             </div>
@@ -700,14 +700,17 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
-          >
-            <Check className="h-4 w-4" />
-            {isSubmitting ? 'Saving...' : 'Save Order (Dispatched)'}
-          </button>
+          {/* Stays visible at the bottom while the form scrolls (phones) */}
+          <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-100">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+            >
+              <Check className="h-4 w-4" />
+              {isSubmitting ? 'Saving...' : `Save Order · Profit ${formatPKR(profit)}`}
+            </button>
+          </div>
         </form>
       </div>
     </div>

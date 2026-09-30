@@ -50,11 +50,11 @@ export default function OrderDetailsDrawer({
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
       <div className="absolute inset-0" onClick={onClose} />
 
-      <aside className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+      <aside className="absolute inset-y-0 right-0 max-w-full flex sm:pl-10">
         <div className="w-screen max-w-md bg-white border-l border-slate-200 text-slate-900 shadow-2xl flex flex-col justify-between">
           
           {/* Top Bar */}
-          <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-white/50">
+          <div className="p-4 sm:p-6 border-b border-slate-200 flex items-center justify-between bg-white/50">
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-slate-500 uppercase">Order Details</span>
@@ -71,7 +71,7 @@ export default function OrderDetailsDrawer({
           </div>
 
           {/* Drawer Body Details */}
-          <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-4 sm:space-y-6 flex-1">
             
             {/* Customer Information */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">

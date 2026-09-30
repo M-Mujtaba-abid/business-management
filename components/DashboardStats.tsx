@@ -114,7 +114,7 @@ export default function DashboardStats({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
         {/* Sales */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">Sales</span>
             <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -128,7 +128,7 @@ export default function DashboardStats({
         </div>
 
         {/* Profit (after DC / petrol / GST) */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">Order Profit</span>
             <div className="h-9 w-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
@@ -145,7 +145,7 @@ export default function DashboardStats({
 
         {/* Net profit */}
         <div
-          className={`rounded-2xl p-5 shadow-sm space-y-3 border ${
+          className={`rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 border ${
             netPositive ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'
           }`}
         >
@@ -177,7 +177,7 @@ export default function DashboardStats({
         {/* Money to receive (Daraz / courier / other) */}
         <button
           onClick={onViewSupplierPayments}
-          className="text-left bg-white border border-slate-200 hover:border-emerald-300 rounded-2xl p-5 shadow-sm space-y-3 transition"
+          className="text-left bg-white border border-slate-200 hover:border-emerald-300 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 transition"
         >
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">To Receive</span>
@@ -199,7 +199,7 @@ export default function DashboardStats({
         {/* Owed to suppliers */}
         <button
           onClick={onViewSupplierPayments}
-          className="text-left bg-white border border-slate-200 hover:border-amber-300 rounded-2xl p-5 shadow-sm space-y-3 transition"
+          className="text-left bg-white border border-slate-200 hover:border-amber-300 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 transition"
         >
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-500">Owed to Suppliers</span>
@@ -243,7 +243,7 @@ export default function DashboardStats({
       </div>
 
       {/* 3. How the profit is made */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
         <h3 className="text-sm font-semibold text-slate-900">Profit breakdown</h3>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
@@ -280,7 +280,7 @@ export default function DashboardStats({
 
       {/* 4. Quick actions + needs attention */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
           <h3 className="text-sm font-semibold text-slate-900">Quick actions</h3>
           <button
             onClick={onOpenNewDispatch}
@@ -304,7 +304,7 @@ export default function DashboardStats({
           </button>
         </div>
 
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
           <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" /> Needs attention
           </h3>
@@ -379,7 +379,7 @@ export default function DashboardStats({
       </div>
 
       {/* 5. Recent orders */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-sm font-semibold text-slate-900">Recent orders</h3>
           <button
@@ -395,7 +395,37 @@ export default function DashboardStats({
             No orders yet. Click &quot;New Order&quot; to add your first one.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: compact list */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {recentSales.slice(0, 6).map((sale) => (
+              <button
+                key={sale.id}
+                onClick={() => onSelectOrder(sale)}
+                className="w-full text-left py-3 flex items-start justify-between gap-3 active:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-sm text-slate-900 truncate">{sale.productName}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {[sale.orderSource?.name, sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : null)]
+                      .filter(Boolean)
+                      .join(' · ') || '—'}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    <StatusBadge status={sale.status} />
+                    <PaymentBadge status={sale.paymentStatus} />
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-semibold text-sm text-slate-900">{formatPKR(sale.soldPrice * sale.quantity)}</div>
+                  <div className="text-[11px] text-slate-500">Profit {formatPKR(sale.profit)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Tablet / desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs text-slate-500 border-b border-slate-200">
                 <tr>
@@ -439,6 +469,7 @@ export default function DashboardStats({
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 

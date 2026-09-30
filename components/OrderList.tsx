@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote } from 'lucide-react'
+import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
@@ -169,6 +169,7 @@ export default function OrderList({
   const [people, setPeople] = useState<Option[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [isBulkUpdating, setIsBulkUpdating] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -215,19 +216,20 @@ export default function OrderList({
     }
   }
 
-  const hasFilters = Object.values(filters).some(Boolean)
+  const activeFilterCount = Object.values(filters).filter(Boolean).length
+  const hasFilters = activeFilterCount > 0
 
   const selectClass =
-    'bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500'
+    'w-full sm:w-auto bg-white border border-slate-300 rounded-xl px-2.5 py-2 sm:py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500'
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-6">
+    <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-6 shadow-sm space-y-4 sm:space-y-6">
 
       {/* Top Filter Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
 
         {/* Status Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 -mx-3 px-3 sm:mx-0 sm:px-0">
           {[
             { label: 'All Orders', value: 'ALL' },
             { label: 'Dispatched', value: 'DISPATCHED' },
@@ -253,7 +255,7 @@ export default function OrderList({
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
 
           {/* Start Date & End Date Pickers */}
-          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs">
+          <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-2.5 py-1 text-xs">
             <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
             <span className="text-[10px] text-slate-500 font-semibold">From:</span>
             <input
@@ -285,14 +287,14 @@ export default function OrderList({
           </div>
 
           {/* Search Bar */}
-          <div className="relative flex-1 sm:w-64">
+          <div className="relative w-full sm:w-64 sm:flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search customer, city, item, supplier..."
-              className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 transition"
+              className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 sm:py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 transition"
             />
           </div>
 
@@ -300,8 +302,22 @@ export default function OrderList({
 
       </div>
 
+      {/* Filters toggle (phones) */}
+      <button
+        onClick={() => setShowFilters((v) => !v)}
+        className={`sm:hidden w-full flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-semibold ${
+          hasFilters ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600'
+        }`}
+      >
+        <span className="flex items-center gap-1.5">
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters{hasFilters ? ` (${activeFilterCount})` : ''}
+        </span>
+        <ChevronDown className={`h-4 w-4 transition ${showFilters ? 'rotate-180' : ''}`} />
+      </button>
+
       {/* Category / Supplier / Payment Filters */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`${showFilters ? 'grid' : 'hidden'} grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center`}>
         <select
           value={filters.orderSourceId}
           onChange={(e) => setFilters({ ...filters, orderSourceId: e.target.value })}
@@ -407,29 +423,29 @@ export default function OrderList({
 
       {/* Bulk action bar */}
       {selectedIds.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-2.5 text-xs">
+        <div className="sticky bottom-3 z-20 lg:static flex flex-wrap items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 sm:px-4 py-2.5 text-xs shadow-lg lg:shadow-none">
           <span className="text-emerald-700 font-semibold">
             {selectedIds.length} order(s) selected · to receive {formatPKR(selectedToReceive)} · owed to supplier{' '}
             {formatPKR(selectedOwedToSupplier)}
           </span>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
             <button
               onClick={() => setSelectedIds([])}
-              className="px-3 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold"
+              className="px-3 py-2 sm:py-1 rounded-lg bg-white border border-slate-200 text-slate-700 font-semibold"
             >
               Clear
             </button>
             <button
               onClick={() => runBulk(() => onSetCustomerPayment(selectedIds, 'RECEIVED'))}
               disabled={isBulkUpdating}
-              className="px-3 py-1 rounded-lg bg-emerald-500 text-white font-bold disabled:opacity-50"
+              className="px-3 py-2 sm:py-1 rounded-lg bg-emerald-500 text-white font-bold disabled:opacity-50"
             >
               {isBulkUpdating ? 'Updating...' : 'Payment Received'}
             </button>
             <button
               onClick={() => runBulk(() => onSetSupplierPayment(selectedIds, 'PAID'))}
               disabled={isBulkUpdating}
-              className="px-3 py-1 rounded-lg bg-amber-500 text-white font-bold disabled:opacity-50"
+              className="px-3 py-2 sm:py-1 rounded-lg bg-amber-500 text-white font-bold disabled:opacity-50"
             >
               {isBulkUpdating ? 'Updating...' : 'Supplier Paid'}
             </button>
@@ -451,7 +467,97 @@ export default function OrderList({
           <p className="text-slate-500 text-xs mt-1">Try adjusting your filters or search term.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Phones & tablets: one card per order */}
+        <div className="lg:hidden space-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-500 px-1">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => setSelectedIds(allSelected ? [] : sales.map((s) => s.id))}
+              className="h-4 w-4 accent-emerald-500"
+            />
+            Select all ({sales.length})
+          </label>
+
+          {sales.map((sale) => (
+            <div
+              key={sale.id}
+              onClick={() => onSelectOrder(sale)}
+              className={`rounded-xl border p-3 space-y-2.5 active:bg-slate-50 transition cursor-pointer ${
+                selectedIds.includes(sale.id) ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-white'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(sale.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => toggleSelected(sale.id)}
+                  className="h-4 w-4 mt-0.5 accent-emerald-500 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-semibold text-sm text-slate-900 break-words">{sale.productName}</div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-bold text-emerald-600 font-mono">{formatPKR(sale.soldPrice * sale.quantity)}</div>
+                      <div className="text-[11px] text-slate-500 font-mono">Profit {formatPKR(sale.profit)}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-500 mt-1">
+                    {sale.orderSource?.name && (
+                      <span className="px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">
+                        {sale.orderSource.name}
+                      </span>
+                    )}
+                    {sale.category?.name && <span className="text-sky-600">{sale.category.name}</span>}
+                    <span>Qty {sale.quantity}</span>
+                    <span>· {new Date(sale.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
+                    <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                      <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
+                      <span className="truncate">{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                <div className="space-y-1 min-w-0">
+                  <div>Order</div>
+                  <StatusBadge status={sale.status} />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <div className="truncate">
+                    {sale.paymentSource?.name || 'Payment'}
+                    {sale.receivedBy?.name ? ` → ${sale.receivedBy.name}` : ''}
+                  </div>
+                  <PaymentBadge
+                    status={sale.paymentStatus}
+                    onClick={() =>
+                      onSetCustomerPayment([sale.id], sale.paymentStatus === 'RECEIVED' ? 'NOT_RECEIVED' : 'RECEIVED')
+                    }
+                  />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  <div className="truncate">
+                    {sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : 'Supplier')}
+                  </div>
+                  <SupplierPayBadge
+                    status={sale.supplierPaymentStatus}
+                    onClick={() =>
+                      onSetSupplierPayment([sale.id], sale.supplierPaymentStatus === 'PAID' ? 'PENDING' : 'PAID')
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: full table */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-700">
             <thead className="bg-slate-50/60 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
               <tr>
@@ -570,6 +676,7 @@ export default function OrderList({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
     </div>

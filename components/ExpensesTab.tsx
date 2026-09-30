@@ -14,6 +14,7 @@ interface Expense {
   partner?: {
     name: string
   }
+  paidBy?: { id: string; name: string } | null
 }
 
 interface ExpensesTabProps {
@@ -75,7 +76,7 @@ export default function ExpensesTab({ onOpenExpenseModal }: ExpensesTabProps) {
         </div>
         <button
           onClick={onOpenExpenseModal}
-          className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition shadow-md shadow-rose-500/10"
+          className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition shadow-md shadow-rose-500/10"
         >
           + Add Expense
         </button>
@@ -122,13 +123,34 @@ export default function ExpensesTab({ onOpenExpenseModal }: ExpensesTabProps) {
             <p className="text-slate-500 text-xs mt-1">Add expenses to see your real net profit.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: compact list */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {expenses.map((exp) => (
+              <div key={exp.id} className="py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="font-semibold text-sm text-slate-900 break-words">{exp.title}</div>
+                  {exp.note && <div className="text-[11px] text-slate-500 break-words">{exp.note}</div>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getCategoryBadge(exp.category)}
+                    <span className="text-[11px] text-slate-500">{new Date(exp.createdAt).toLocaleDateString()}</span>
+                    {exp.paidBy?.name && <span className="text-[11px] text-slate-600">Paid by <b>{exp.paidBy.name}</b></span>}
+                  </div>
+                </div>
+                <div className="font-mono font-bold text-rose-600 text-sm shrink-0">Rs. {exp.amount.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tablet / desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-50/60 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Title / Description</th>
                   <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Paid by</th>
                   {/* <th className="px-4 py-3">Funding Source</th> PARTNERS LEDGER */}
                   <th className="px-4 py-3">Amount</th>
                 </tr>
@@ -144,6 +166,7 @@ export default function ExpensesTab({ onOpenExpenseModal }: ExpensesTabProps) {
                       {exp.note && <span className="block text-[11px] font-normal text-slate-500 mt-0.5">{exp.note}</span>}
                     </td>
                     <td className="px-4 py-3.5">{getCategoryBadge(exp.category)}</td>
+                    <td className="px-4 py-3.5 text-slate-700">{exp.paidBy?.name || '—'}</td>
                     {/* PARTNERS LEDGER — uncomment to restore
                     <td className="px-4 py-3.5">
                       {exp.fundingSource === 'PERSONAL_CAPITAL' ? (
@@ -163,6 +186,7 @@ export default function ExpensesTab({ onOpenExpenseModal }: ExpensesTabProps) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 

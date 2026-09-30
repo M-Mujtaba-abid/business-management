@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Sidebar, { NavSection } from './Sidebar'
-import { Menu, Calendar, Plus, ChevronDown } from 'lucide-react'
+import { Menu, Calendar, ChevronDown } from 'lucide-react'
 
 interface AppShellProps {
   currentSection: NavSection
@@ -296,15 +296,6 @@ export default function AppShell({
                 <ChevronDown className={`h-3.5 w-3.5 transition ${isFilterOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              {/* Quick Order Button */}
-              <button
-                onClick={onOpenNewDispatch}
-                className="flex p-2 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs items-center gap-1.5 transition shadow-sm"
-                aria-label="New Order"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">New Order</span>
-              </button>
             </div>
           </div>
 

@@ -1,139 +1,178 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { parseDateRange, hasBounds } from '@/lib/dateRange'
 
 export const dynamic = 'force-dynamic'
+
+const DAY = 86400000
+const OVERDUE_DAYS = 15
+
+const EXPENSE_LABELS: Record<string, string> = {
+  MARKETING_ADS: 'Ads',
+  PACKAGING: 'Packaging',
+  COURIER_BILL: 'Courier bills',
+  LOGISTICS: 'Logistics',
+  UTILITIES: 'Utilities',
+  MISC: 'Misc',
+}
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+const monthKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}`
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
-    const range = searchParams.get('range') || 'all'
-
-    let dateFilter: any = {}
+    const dateFilter = parseDateRange(searchParams)
+    const inPeriod = hasBounds(dateFilter) ? { createdAt: dateFilter } : {}
     const now = new Date()
 
-    if (startDate || endDate) {
-      if (startDate) {
-        const [sY, sM, sD] = startDate.split('-').map(Number)
-        dateFilter.gte = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
-      }
-      if (endDate) {
-        const [eY, eM, eD] = endDate.split('-').map(Number)
-        dateFilter.lte = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
-      }
-    } else if (range === 'today') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
-      dateFilter = { gte: startOfDay, lte: endOfDay }
-    } else if (range === 'week') {
-      const startOfWeek = new Date(now)
-      startOfWeek.setDate(now.getDate() - now.getDay())
-      startOfWeek.setHours(0, 0, 0, 0)
-      dateFilter = { gte: startOfWeek }
-    } else if (range === 'month') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-      dateFilter = { gte: startOfMonth }
-    } else if (/^\d{4}-\d{2}$/.test(range)) {
-      // Format: YYYY-MM (e.g. 2026-07)
-      const [yearStr, monthStr] = range.split('-')
-      const year = parseInt(yearStr, 10)
-      const month = parseInt(monthStr, 10) - 1
-      const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
-      const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999)
-      dateFilter = { gte: startOfMonth, lte: endOfMonth }
-    } else if (/^\d{4}$/.test(range)) {
-      // Format: YYYY (e.g. 2026)
-      const year = parseInt(range, 10)
-      const startOfYear = new Date(year, 0, 1, 0, 0, 0, 0)
-      const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999)
-      dateFilter = { gte: startOfYear, lte: endOfYear }
+    // Trend window: the selected period, or the last 30 days when the period is open-ended or shorter than a week
+    let trendStart = dateFilter.gte ? startOfDay(dateFilter.gte) : startOfDay(new Date(now.getTime() - 29 * DAY))
+    const trendEnd = dateFilter.lte && dateFilter.lte < now ? dateFilter.lte : now
+    if (trendEnd.getTime() - trendStart.getTime() < 6 * DAY) {
+      trendStart = startOfDay(new Date(trendEnd.getTime() - 29 * DAY))
     }
+    const byMonth = trendEnd.getTime() - trendStart.getTime() > 62 * DAY
 
-    const salesWhere = (dateFilter.gte || dateFilter.lte) ? { createdAt: dateFilter } : {}
-    const expensesWhere = (dateFilter.gte || dateFilter.lte) ? { createdAt: dateFilter } : {}
+    // Previous period of the same length (for the Sales % change); only for bounded periods
+    const periodStart = dateFilter.gte
+    const periodEnd = dateFilter.lte && dateFilter.lte < now ? dateFilter.lte : now
+    const prevWindow = periodStart
+      ? { gte: new Date(periodStart.getTime() - (periodEnd.getTime() - periodStart.getTime())), lt: periodStart }
+      : null
 
-    // Fetch Sales
-    const sales = await prisma.sale.findMany({
-      where: salesWhere,
-    })
+    // All queries in parallel, selecting only the columns we use
+    const [
+      sales,
+      expenses,
+      trendSales,
+      trendExpenses,
+      prevDelivered,
+      pendingSupplierSales,
+      unpaidDelivered,
+      returnedItemsCount,
+      partners,
+      suppliers,
+    ] = await Promise.all([
+      prisma.sale.findMany({
+        where: inPeriod,
+        select: {
+          status: true, soldPrice: true, quantity: true, profit: true,
+          deliveryCharge: true, petrolCost: true, gstAmount: true,
+        },
+      }),
+      prisma.expense.groupBy({ by: ['category'], where: inPeriod, _sum: { amount: true } }),
+      prisma.sale.findMany({
+        where: { createdAt: { gte: trendStart, lte: trendEnd } },
+        select: { createdAt: true, status: true, soldPrice: true, quantity: true, profit: true },
+      }),
+      prisma.expense.findMany({
+        where: { createdAt: { gte: trendStart, lte: trendEnd } },
+        select: { createdAt: true, amount: true },
+      }),
+      prevWindow
+        ? prisma.sale.findMany({
+            where: { status: 'DELIVERED', createdAt: prevWindow },
+            select: { soldPrice: true, quantity: true },
+          })
+        : Promise.resolve(null),
+      // Supplier payables and receivables are all time: money is owed regardless of the period
+      prisma.sale.findMany({
+        where: { supplierPaymentStatus: 'PENDING' },
+        select: { costPrice: true, quantity: true, createdAt: true },
+      }),
+      prisma.sale.findMany({
+        where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
+        select: { soldPrice: true, quantity: true },
+      }),
+      prisma.returnedItem.count({ where: { status: 'AVAILABLE' } }),
+      prisma.partner.findMany({ orderBy: { name: 'asc' } }),
+      prisma.supplier.findMany({ orderBy: { name: 'asc' }, select: { unpaidBalance: true } }),
+    ])
 
-    // Delivered Sales
-    const deliveredSales = sales.filter((s) => s.status === 'DELIVERED')
-    const totalRevenue = deliveredSales.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
-    const grossProfit = deliveredSales.reduce((acc, s) => acc + s.profit, 0)
-
-    // Order-level costs on delivered sales (already subtracted inside each sale's profit)
-    const orderExpenses = deliveredSales.reduce(
-      (acc, s) => acc + s.deliveryCharge + s.petrolCost + s.gstAmount,
-      0
-    )
-
-    // Returned Sales: a returned order's profit is stored as -(loss), for old and new orders alike
-    const returnLoss = sales
-      .filter((s) => s.status === 'RETURNED' && s.profit < 0)
-      .reduce((acc, s) => acc + -s.profit, 0)
-
-    // Active Dispatches
+    // Period totals
+    const delivered = sales.filter((s) => s.status === 'DELIVERED')
+    const totalRevenue = delivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
+    const grossProfit = delivered.reduce((acc, s) => acc + s.profit, 0)
+    const dcTotal = delivered.reduce((acc, s) => acc + s.deliveryCharge, 0)
+    const petrolTotal = delivered.reduce((acc, s) => acc + s.petrolCost, 0)
+    const gstTotal = delivered.reduce((acc, s) => acc + s.gstAmount, 0)
+    const orderExpenses = dcTotal + petrolTotal + gstTotal
+    // A returned order's profit is stored as -(loss), for old and new orders alike
+    const returnLoss = sales.filter((s) => s.status === 'RETURNED' && s.profit < 0).reduce((acc, s) => acc - s.profit, 0)
     const activeDispatches = sales.filter((s) => s.status === 'DISPATCHED').length
-    const totalOrdersCount = sales.length
-
-    // General Expenses
-    const expenses = await prisma.expense.findMany({
-      where: expensesWhere,
-    })
-    const generalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0)
-
-    // True Net Profit
+    const generalExpenses = expenses.reduce((acc, e) => acc + (e._sum.amount || 0), 0)
     const trueNetProfit = grossProfit - returnLoss - generalExpenses
 
-    // Total Expenses = General Expenses + Return Loss
-    const totalExpensesCombined = generalExpenses + returnLoss
+    // Where the money went: order-level costs + general expense categories
+    const expenseBreakdown = [
+      { label: 'DC', amount: dcTotal },
+      { label: 'Petrol', amount: petrolTotal },
+      { label: 'GST', amount: gstTotal },
+      ...expenses.map((e) => ({ label: EXPENSE_LABELS[e.category] || e.category, amount: e._sum.amount || 0 })),
+    ]
+      .filter((x) => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
 
-    // Partners & Supplier Ledger
-    const partners = await prisma.partner.findMany({
-      orderBy: { name: 'asc' },
-    })
+    // Trend buckets (daily, or monthly for long periods)
+    const buckets: { key: string; date: string; sales: number; orderProfit: number; expenses: number; returnLoss: number; orders: number }[] = []
+    const index = new Map<string, number>()
+    const cursor = startOfDay(trendStart)
+    if (byMonth) cursor.setDate(1)
+    while (cursor <= trendEnd) {
+      const key = byMonth ? monthKey(cursor) : dayKey(cursor)
+      index.set(key, buckets.length)
+      buckets.push({ key, date: cursor.toISOString(), sales: 0, orderProfit: 0, expenses: 0, returnLoss: 0, orders: 0 })
+      if (byMonth) cursor.setMonth(cursor.getMonth() + 1)
+      else cursor.setDate(cursor.getDate() + 1)
+    }
+    const bucketOf = (d: Date) => index.get(byMonth ? monthKey(d) : dayKey(d))
+    for (const s of trendSales) {
+      const i = bucketOf(s.createdAt)
+      if (i === undefined) continue
+      buckets[i].orders += 1
+      if (s.status === 'DELIVERED') {
+        buckets[i].sales += s.soldPrice * s.quantity
+        buckets[i].orderProfit += s.profit
+      } else if (s.status === 'RETURNED' && s.profit < 0) {
+        buckets[i].returnLoss -= s.profit
+      }
+    }
+    for (const e of trendExpenses) {
+      const i = bucketOf(e.createdAt)
+      if (i !== undefined) buckets[i].expenses += e.amount
+    }
+    const trend = buckets.map(({ key, ...b }) => ({ ...b, netProfit: b.orderProfit - b.expenses - b.returnLoss }))
 
-    const suppliers = await prisma.supplier.findMany({
-      orderBy: { name: 'asc' },
-    })
-    const totalSupplierDebt = suppliers.reduce((acc, sup) => acc + sup.unpaidBalance, 0)
+    const prevRevenue = prevDelivered ? prevDelivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0) : null
+    const salesChangePct = prevRevenue && prevRevenue > 0 ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 : null
 
-    // Market supplier payables (all time, not date filtered: debt is owed regardless of period)
-    const pendingSupplierSales = await prisma.sale.findMany({
-      where: { supplierPaymentStatus: 'PENDING' },
-      select: { costPrice: true, quantity: true },
-    })
     const supplierPendingTotal = pendingSupplierSales.reduce((acc, s) => acc + s.costPrice * s.quantity, 0)
-
-    const returnedItemsCount = await prisma.returnedItem.count({ where: { status: 'AVAILABLE' } })
-
-    // Money still to come in from Daraz / courier / others for delivered orders (all time)
-    const unpaidDelivered = await prisma.sale.findMany({
-      where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-      select: { soldPrice: true, quantity: true },
-    })
-    const receivablePendingTotal = unpaidDelivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
-    const receivablePendingCount = unpaidDelivered.length
+    const overdueCutoff = now.getTime() - OVERDUE_DAYS * DAY
+    const supplierOverdue = pendingSupplierSales.some((s) => s.createdAt.getTime() < overdueCutoff)
 
     return NextResponse.json({
-      orderExpenses,
-      supplierPendingTotal,
-      returnedItemsCount,
-      receivablePendingTotal,
-      receivablePendingCount,
       totalRevenue,
       grossProfit,
+      orderExpenses,
       returnLoss,
       generalExpenses,
       trueNetProfit,
-      totalExpensesCombined,
+      totalExpensesCombined: generalExpenses + returnLoss,
       activeDispatches,
-      totalOrdersCount,
+      totalOrdersCount: sales.length,
+      expenseBreakdown,
+      trend,
+      trendGranularity: byMonth ? 'month' : 'day',
+      salesChangePct,
+      supplierPendingTotal,
+      supplierOverdue,
+      receivablePendingTotal: unpaidDelivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0),
+      receivablePendingCount: unpaidDelivered.length,
+      returnedItemsCount,
       partners,
-      suppliers,
-      totalSupplierDebt,
+      totalSupplierDebt: suppliers.reduce((acc, sup) => acc + sup.unpaidBalance, 0),
     })
   } catch (error: any) {
     console.error('Stats error:', error)

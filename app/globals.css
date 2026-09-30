@@ -31,3 +31,56 @@ body {
     font-size: 16px !important;
   }
 }
+
+/* ---------- Dashboard chart animations (run once on mount, GPU-friendly) ---------- */
+@keyframes viz-grow-y {
+  from { transform: scaleY(0); }
+}
+@keyframes viz-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes viz-fade {
+  from { opacity: 0; }
+}
+@keyframes viz-rise {
+  from { opacity: 0; transform: translateY(8px); }
+}
+/* Donut segments: animate from empty to their own dash length */
+@keyframes viz-sweep {
+  from { stroke-dasharray: 0 100; }
+}
+
+.viz-bar {
+  transform-origin: bottom;
+  animation: viz-grow-y 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.viz-bar-down {
+  transform-origin: top;
+  animation: viz-grow-y 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.viz-svg-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: viz-grow-y 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.viz-line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: viz-draw 1.2s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.viz-area {
+  animation: viz-fade 1.2s ease-out both;
+}
+.viz-sweep {
+  animation: viz-sweep 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.viz-card {
+  animation: viz-rise 0.5s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-bar, .viz-bar-down, .viz-svg-bar, .viz-line, .viz-area, .viz-sweep, .viz-card {
+    animation: none !important;
+  }
+}

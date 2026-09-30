@@ -54,12 +54,15 @@ model Expense {
   fundingSource FundingSource   @default(BUSINESS_PROFIT)
   partnerId     String?
   note          String?
+  paidById      String?
   createdAt     DateTime        @default(now())
 
   partner       Partner?        @relation(fields: [partnerId], references: [id])
+  paidBy        Person?         @relation(fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([category])
+  @@index([paidById])
 }
 
 model Partner {
@@ -109,11 +112,27 @@ model Category {
 
 // Person whose account the order money lands in (Mujtaba, Noman, ...)
 model Person {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  createdAt   DateTime     @default(now())
+
+  sales       Sale[]
+  expenses    Expense[]
+  withdrawals Withdrawal[]
+}
+
+// Money a person takes out of the business money they hold
+model Withdrawal {
   id        String   @id @default(cuid())
-  name      String   @unique
+  personId  String
+  amount    Float
+  reason    String?
   createdAt DateTime @default(now())
 
-  sales     Sale[]
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId])
+  @@index([createdAt])
 }
 
 // Where the order came from (Daraz, Website, OLX, Marketplace, ...)

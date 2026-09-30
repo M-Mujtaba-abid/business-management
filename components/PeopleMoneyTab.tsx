@@ -1,19 +1,34 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, ArrowUpRight, Calendar } from 'lucide-react'
+import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface PersonSummary {
   id: string | null
   name: string
   receivedAmount: number
   receivedCount: number
+  expensesAmount: number
+  expensesCount: number
+  withdrawnAmount: number
+  withdrawnCount: number
+  inHand: number
   expectedAmount: number
   expectedCount: number
 }
 
+interface Withdrawal {
+  id: string
+  personId: string
+  amount: number
+  reason: string | null
+  createdAt: string
+}
+
 interface PeopleMoneyTabProps {
   onViewOrders: (receivedById: string) => void // person id, or 'none'
+  onChanged?: () => void
 }
 
 type Period = 'week' | 'month' | 'last-month' | 'all' | 'custom'
@@ -41,50 +56,107 @@ const periodRange = (period: Period): { from: string; to: string } => {
   return { from: '', to: '' }
 }
 
-const formatPKR = (n: number) => `Rs. ${n.toLocaleString()}`
+const formatPKR = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`
 
-// How much order money each person has received, and how much is still coming to them
-export default function PeopleMoneyTab({ onViewOrders }: PeopleMoneyTabProps) {
+// How much business money each person holds: received order money minus expenses they paid and withdrawals
+export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyTabProps) {
   const [period, setPeriod] = useState<Period>('month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [summary, setSummary] = useState<PersonSummary[]>([])
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  // Withdraw form (one person at a time)
+  const [withdrawFor, setWithdrawFor] = useState<string | null>(null)
+  const [wAmount, setWAmount] = useState('')
+  const [wReason, setWReason] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [historyFor, setHistoryFor] = useState<string | null>(null)
 
   const { from, to } = period === 'custom' ? { from: customFrom, to: customTo } : periodRange(period)
 
-  const fetchSummary = useCallback(() => {
+  const fetchAll = useCallback(() => {
     setIsLoading(true)
     const params = new URLSearchParams()
     if (from) params.set('from', from)
     if (to) params.set('to', to)
-    fetch(`/api/people/summary?${params.toString()}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setSummary(data)
+    Promise.all([
+      fetch(`/api/people/summary?${params.toString()}`).then((r) => r.json()),
+      fetch(`/api/withdrawals?${params.toString()}`).then((r) => r.json()),
+    ])
+      .then(([sum, wds]) => {
+        if (Array.isArray(sum)) setSummary(sum)
+        if (Array.isArray(wds)) setWithdrawals(wds)
       })
       .catch(console.error)
       .finally(() => setIsLoading(false))
   }, [from, to])
 
   useEffect(() => {
-    fetchSummary()
-  }, [fetchSummary])
+    fetchAll()
+  }, [fetchAll])
 
-  const totalReceived = summary.reduce((acc, p) => acc + p.receivedAmount, 0)
+  const openWithdraw = (personId: string) => {
+    setWithdrawFor(personId)
+    setWAmount('')
+    setWReason('')
+  }
+
+  const saveWithdrawal = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!withdrawFor) return
+    const amt = parseFloat(wAmount)
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Enter a valid amount')
+      return
+    }
+    setIsSaving(true)
+    try {
+      const res = await fetch('/api/withdrawals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personId: withdrawFor, amount: amt, reason: wReason }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to save withdrawal')
+      toast.success('Withdrawal saved')
+      setWithdrawFor(null)
+      fetchAll()
+      onChanged?.()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save withdrawal')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const deleteWithdrawal = async (w: Withdrawal) => {
+    if (!confirm(`Delete withdrawal of ${formatPKR(w.amount)}${w.reason ? ` (${w.reason})` : ''}?`)) return
+    const res = await fetch(`/api/withdrawals/${w.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success('Withdrawal deleted')
+      fetchAll()
+    } else {
+      toast.error('Failed to delete withdrawal')
+    }
+  }
+
+  const totalInHand = summary.reduce((acc, p) => acc + p.inHand, 0)
   const totalExpected = summary.reduce((acc, p) => acc + p.expectedAmount, 0)
 
   const periodLabel =
-    period === 'week' ? 'this week' : period === 'month' ? 'this month' : period === 'last-month' ? 'last month' : period === 'all' ? 'all time' : 'in selected dates'
+    period === 'week' ? 'This week' : period === 'month' ? 'This month' : period === 'last-month' ? 'Last month' : period === 'all' ? 'All time' : 'Selected dates'
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Users className="h-5 w-5 text-violet-600" /> Money with each person
           </h2>
-          <p className="text-xs text-slate-500">Order payments received into each person&apos;s account</p>
+          <p className="text-xs text-slate-500">
+            Order money received (sale − cover cost), minus expenses paid and withdrawals
+          </p>
         </div>
 
         {/* Period picker */}
@@ -99,7 +171,7 @@ export default function PeopleMoneyTab({ onViewOrders }: PeopleMoneyTabProps) {
             <button
               key={value}
               onClick={() => setPeriod(value)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition ${
                 period === value ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -130,37 +202,138 @@ export default function PeopleMoneyTab({ onViewOrders }: PeopleMoneyTabProps) {
       )}
 
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[...Array(2)].map((_, i) => (
-            <div key={i} className="h-36 bg-slate-100/40 rounded-xl animate-pulse" />
+            <div key={i} className="h-56 bg-slate-100/40 rounded-xl animate-pulse" />
           ))}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {summary.map((p) => {
               const key = p.id || 'none'
+              const myWithdrawals = withdrawals.filter((w) => w.personId === p.id)
               return (
                 <div key={key} className="rounded-xl p-4 space-y-3 border border-violet-100 bg-violet-50/40">
-                  <h3 className="font-bold text-slate-900">{p.name}</h3>
-
-                  <div>
-                    <div className="text-[11px] text-slate-500">Received {periodLabel}</div>
-                    <div className="text-xl font-black font-mono text-violet-700">{formatPKR(p.receivedAmount)}</div>
-                    <div className="text-[11px] text-slate-500">{p.receivedCount} order(s)</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-bold text-slate-900">{p.name}</h3>
+                    <div className="text-right">
+                      <div className="text-[11px] text-slate-500">In hand now</div>
+                      <div className={`text-xl font-black font-mono ${p.inHand >= 0 ? 'text-violet-700' : 'text-rose-600'}`}>
+                        {formatPKR(p.inHand)}
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="text-xs text-slate-600 border-t border-violet-100 pt-2">
+                  {/* Period breakdown */}
+                  <div className="rounded-lg bg-white border border-violet-100 p-2.5 space-y-1 text-xs">
+                    <div className="text-[11px] font-semibold text-slate-500 mb-1">{periodLabel}</div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Received ({p.receivedCount} orders)</span>
+                      <span className="font-mono font-semibold text-emerald-600">+ {formatPKR(p.receivedAmount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Expenses paid ({p.expensesCount})</span>
+                      <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.expensesAmount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Withdrawn ({p.withdrawnCount})</span>
+                      <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.withdrawnAmount)}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-600">
                     Still to come: <b className="font-mono">{formatPKR(p.expectedAmount)}</b>{' '}
                     <span className="text-slate-400">({p.expectedCount} delivered, not received)</span>
                   </div>
 
-                  <button
-                    onClick={() => onViewOrders(key)}
-                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold flex items-center justify-center gap-1"
-                  >
-                    View orders <ArrowUpRight className="h-3 w-3" />
-                  </button>
+                  {/* Withdraw form */}
+                  {p.id && withdrawFor === p.id && (
+                    <form onSubmit={saveWithdrawal} className="rounded-lg bg-white border border-rose-200 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-rose-700">Withdraw from {p.name}</span>
+                        <button type="button" onClick={() => setWithdrawFor(null)} className="text-slate-400 hover:text-slate-700">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        autoFocus
+                        value={wAmount}
+                        onChange={(e) => setWAmount(e.target.value)}
+                        placeholder="Amount (Rs)"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-rose-500"
+                      />
+                      <input
+                        type="text"
+                        value={wReason}
+                        onChange={(e) => setWReason(e.target.value)}
+                        placeholder="Reason (e.g. personal use, profit share)"
+                        className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-rose-500"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="w-full py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold disabled:opacity-50"
+                      >
+                        {isSaving ? 'Saving...' : 'Save withdrawal'}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Withdrawal history for the period */}
+                  {p.id && historyFor === p.id && (
+                    <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-slate-500">Withdrawals · {periodLabel}</div>
+                      {myWithdrawals.length === 0 ? (
+                        <p className="text-xs text-slate-400">None in this period.</p>
+                      ) : (
+                        myWithdrawals.map((w) => (
+                          <div key={w.id} className="flex items-center justify-between gap-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="font-mono font-semibold text-slate-800">{formatPKR(w.amount)}</div>
+                              <div className="text-[11px] text-slate-500 truncate">
+                                {new Date(w.createdAt).toLocaleDateString()}
+                                {w.reason ? ` · ${w.reason}` : ''}
+                              </div>
+                            </div>
+                            <button onClick={() => deleteWithdrawal(w)} className="p-1 text-slate-400 hover:text-rose-600" title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {p.id ? (
+                      <>
+                        <button
+                          onClick={() => (withdrawFor === p.id ? setWithdrawFor(null) : openWithdraw(p.id as string))}
+                          className="px-2 py-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-bold flex items-center justify-center gap-1"
+                        >
+                          <ArrowDownToLine className="h-3.5 w-3.5" /> Withdraw
+                        </button>
+                        <button
+                          onClick={() => setHistoryFor(historyFor === p.id ? null : (p.id as string))}
+                          className="px-2 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold flex items-center justify-center gap-1"
+                        >
+                          <History className="h-3.5 w-3.5" /> History
+                        </button>
+                      </>
+                    ) : (
+                      <div className="col-span-2" />
+                    )}
+                    <button
+                      onClick={() => onViewOrders(key)}
+                      className="px-2 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold flex items-center justify-center gap-1"
+                    >
+                      Orders <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -168,7 +341,7 @@ export default function PeopleMoneyTab({ onViewOrders }: PeopleMoneyTabProps) {
 
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600 border-t border-slate-100 pt-3">
             <span>
-              Total received {periodLabel}: <b className="font-mono text-slate-900">{formatPKR(totalReceived)}</b>
+              Total in hand: <b className="font-mono text-slate-900">{formatPKR(totalInHand)}</b>
             </span>
             <span>
               Total still to come: <b className="font-mono text-slate-900">{formatPKR(totalExpected)}</b>

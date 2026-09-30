@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react' // useEffect: PARTNERS LEDGER
+import React, { useState, useEffect } from 'react'
 import { X, Receipt, DollarSign, Check } from 'lucide-react' // Users: PARTNERS LEDGER
 
 /* PARTNERS LEDGER — uncomment to restore
@@ -26,6 +26,19 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
   const [fundingSource] = useState('BUSINESS_PROFIT') // was [fundingSource, setFundingSource]
   const [partnerId] = useState('') // was [partnerId, setPartnerId]
   const [note, setNote] = useState('')
+  // Whose money (Mujtaba / Noman ...) this expense is paid from
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([])
+  const [paidById, setPaidById] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+    fetch('/api/people')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setPeople(data)
+      })
+      .catch(console.error)
+  }, [isOpen])
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +81,7 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
           fundingSource,
           partnerId: fundingSource === 'PERSONAL_CAPITAL' ? partnerId : null,
           note,
+          paidById: paidById || null,
         }),
       })
 
@@ -81,6 +95,7 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
       setTitle('')
       setAmount('')
       setNote('')
+      setPaidById('')
     } catch (err: any) {
       setError(err.message || 'Expense creation failed')
     } finally {
@@ -91,8 +106,8 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 overflow-hidden flex flex-col max-h-[94dvh]">
         
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200 bg-white/50">
@@ -111,7 +126,7 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">
               {error}
@@ -218,6 +233,32 @@ export default function ExpenseWizard({ isOpen, onClose, onSuccess }: ExpenseWiz
           )}
 
           */}
+
+          {/* Paid from whose money */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">Paid from</label>
+            <div className="flex flex-wrap gap-1.5">
+              {people.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPaidById(paidById === p.id ? '' : p.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                    paidById === p.id
+                      ? 'bg-rose-500 text-white border-rose-500'
+                      : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {paidById
+                ? `Will be subtracted from ${people.find((p) => p.id === paidById)?.name}'s money in hand.`
+                : 'Not linked to anyone. It only reduces net profit.'}
+            </p>
+          </div>
 
           {/* Description / Note */}
           <div>

@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const expenses = await prisma.expense.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { partner: true },
+      include: { partner: true, paidBy: true },
     })
 
     return NextResponse.json(expenses)
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, amount, category, fundingSource, partnerId, note } = body
+    const { title, amount, category, fundingSource, partnerId, note, paidById } = body
 
     if (!title || amount === undefined || !category || !fundingSource) {
       return NextResponse.json({ error: 'Title, amount, category, and funding source are required.' }, { status: 400 })
@@ -53,8 +53,9 @@ export async function POST(request: NextRequest) {
         fundingSource: fundingSource as FundingSource,
         partnerId: fundingSource === 'PERSONAL_CAPITAL' && partnerId ? partnerId : null,
         note: note ? note.trim() : null,
+        paidById: paidById || null,
       },
-      include: { partner: true },
+      include: { partner: true, paidBy: true },
     })
 
     // If Personal Capital, increment Partner's total capital invested

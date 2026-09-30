@@ -47,8 +47,8 @@ export default function MarkReturnedModal({
   const lossNum = parseFloat(loss) || 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl text-slate-900 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl text-slate-900 overflow-hidden flex flex-col max-h-[94dvh]">
 
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200">
@@ -64,7 +64,7 @@ export default function MarkReturnedModal({
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4 text-sm">
+        <div className="p-4 sm:p-6 space-y-4 text-sm overflow-y-auto">
           <div className="bg-slate-100/60 border border-slate-300/60 rounded-lg p-3 space-y-1 text-xs">
             <p className="text-slate-700"><span className="font-semibold text-slate-900">Product:</span> {sale.productName} x{sale.quantity}</p>
             <p className="text-slate-700"><span className="font-semibold text-slate-900">Customer:</span> {sale.customerName}</p>

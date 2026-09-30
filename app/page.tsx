@@ -328,6 +328,7 @@ export default function Home() {
       {activeSection === 'partners-suppliers' && (
         <div className="space-y-6">
           <PeopleMoneyTab
+            onChanged={refreshAll}
             onViewOrders={(receivedById) => {
               setOrderFilters({ ...EMPTY_ORDER_FILTERS, receivedById })
               setStatusFilter('ALL')

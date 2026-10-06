@@ -213,6 +213,8 @@ model Sale {
   receivedById           String?
   paymentStatus          CustomerPayment @default(NOT_RECEIVED)
   paymentReceivedAt      DateTime?
+  // Actual (or expected, until received) payout for the order; null = full sale amount
+  receivedAmount         Float?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 

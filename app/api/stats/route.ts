@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { parseDateRange, hasBounds } from '@/lib/dateRange'
+import { payoutAmount, paymentFee } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
       prisma.sale.findMany({
         where: inPeriod,
         select: {
-          status: true, soldPrice: true, quantity: true, profit: true,
+          status: true, soldPrice: true, quantity: true, profit: true, receivedAmount: true,
           deliveryCharge: true, petrolCost: true, gstAmount: true,
         },
       }),
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { soldPrice: true, quantity: true },
+        select: { soldPrice: true, quantity: true, receivedAmount: true },
       }),
       prisma.returnedItem.count({ where: { status: 'AVAILABLE' } }),
       prisma.partner.findMany({ orderBy: { name: 'asc' } }),
@@ -99,6 +100,8 @@ export async function GET(request: NextRequest) {
     const petrolTotal = delivered.reduce((acc, s) => acc + s.petrolCost, 0)
     const gstTotal = delivered.reduce((acc, s) => acc + s.gstAmount, 0)
     const orderExpenses = dcTotal + petrolTotal + gstTotal
+    // Tax / fee cut by Daraz, couriers, etc. (sale total minus the received amount); already inside each sale's profit
+    const paymentFees = delivered.reduce((acc, s) => acc + paymentFee(s), 0)
     // A returned order's profit is stored as -(loss), for old and new orders alike
     const returnLoss = sales.filter((s) => s.status === 'RETURNED' && s.profit < 0).reduce((acc, s) => acc - s.profit, 0)
     const activeDispatches = sales.filter((s) => s.status === 'DISPATCHED').length
@@ -156,6 +159,7 @@ export async function GET(request: NextRequest) {
       totalRevenue,
       grossProfit,
       orderExpenses,
+      paymentFees,
       returnLoss,
       generalExpenses,
       trueNetProfit,
@@ -168,7 +172,7 @@ export async function GET(request: NextRequest) {
       salesChangePct,
       supplierPendingTotal,
       supplierOverdue,
-      receivablePendingTotal: unpaidDelivered.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0),
+      receivablePendingTotal: unpaidDelivered.reduce((acc, s) => acc + payoutAmount(s), 0),
       receivablePendingCount: unpaidDelivered.length,
       returnedItemsCount,
       partners,

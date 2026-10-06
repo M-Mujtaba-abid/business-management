@@ -34,6 +34,7 @@ export interface Sale {
   supplier?: { id: string; name: string } | null
   paymentStatus: CustomerPaymentStatus
   paymentReceivedAt?: string | null
+  receivedAmount?: number | null
   paymentSource?: { id: string; name: string } | null
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
@@ -82,6 +83,7 @@ interface OrderListProps {
   setFilters: (f: OrderFilters) => void
   onSetSupplierPayment: (saleIds: string[], status: 'PAID' | 'PENDING') => Promise<void>
   onSetCustomerPayment: (saleIds: string[], status: 'RECEIVED' | 'NOT_RECEIVED') => Promise<void>
+  onReceivePayment: (sale: Sale) => void // opens the "actual amount received" popup
   onSelectOrder: (sale: Sale) => void
 }
 
@@ -158,6 +160,7 @@ export default function OrderList({
   setFilters,
   onSetSupplierPayment,
   onSetCustomerPayment,
+  onReceivePayment,
   onSelectOrder,
 }: OrderListProps) {
   const formatPKR = (amt: number) => `Rs. ${amt.toLocaleString()}`
@@ -198,7 +201,7 @@ export default function OrderList({
   const selectedSales = sales.filter((s) => selectedIds.includes(s.id))
   const selectedToReceive = selectedSales
     .filter((s) => s.paymentStatus === 'NOT_RECEIVED')
-    .reduce((acc, s) => acc + s.soldPrice * s.quantity, 0)
+    .reduce((acc, s) => acc + (s.receivedAmount ?? s.soldPrice * s.quantity), 0)
   const selectedOwedToSupplier = selectedSales
     .filter((s) => s.supplierPaymentStatus === 'PENDING')
     .reduce((acc, s) => acc + s.costPrice * s.quantity, 0)
@@ -536,7 +539,7 @@ export default function OrderList({
                   <PaymentBadge
                     status={sale.paymentStatus}
                     onClick={() =>
-                      onSetCustomerPayment([sale.id], sale.paymentStatus === 'RECEIVED' ? 'NOT_RECEIVED' : 'RECEIVED')
+                      sale.paymentStatus === 'RECEIVED' ? onSetCustomerPayment([sale.id], 'NOT_RECEIVED') : onReceivePayment(sale)
                     }
                   />
                 </div>
@@ -642,7 +645,7 @@ export default function OrderList({
                     <PaymentBadge
                       status={sale.paymentStatus}
                       onClick={() =>
-                        onSetCustomerPayment([sale.id], sale.paymentStatus === 'RECEIVED' ? 'NOT_RECEIVED' : 'RECEIVED')
+                        sale.paymentStatus === 'RECEIVED' ? onSetCustomerPayment([sale.id], 'NOT_RECEIVED') : onReceivePayment(sale)
                       }
                     />
                   </td>

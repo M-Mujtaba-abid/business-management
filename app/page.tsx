@@ -17,6 +17,7 @@ import ReceivablesTab from '@/components/ReceivablesTab'
 import PeopleMoneyTab from '@/components/PeopleMoneyTab'
 import ExpenseWizard from '@/components/ui/ExpenseWizard'
 import MarkReturnedModal from '@/components/MarkReturnedModal'
+import ReceivePaymentModal from '@/components/ReceivePaymentModal'
 import ExpensesTab from '@/components/ExpensesTab'
 import CityRatesTab from '@/components/CityRatesTab'
 // import LedgerTab from '@/components/LedgerTab' // PARTNERS LEDGER — uncomment to restore
@@ -63,6 +64,7 @@ export default function Home() {
   const [isExpenseOpen, setIsExpenseOpen] = useState(false)
   const [selectedDrawerSale, setSelectedDrawerSale] = useState<Sale | null>(null)
   const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
+  const [receiveModal, setReceiveModal] = useState<{ sale: Sale; mode: 'receive' | 'edit' } | null>(null)
 
   // Fetch KPI Stats
   const fetchStats = useCallback(async () => {
@@ -204,6 +206,27 @@ export default function Home() {
     }
   }
 
+  // Save the actual amount received for one order (and mark it Received when receiving)
+  const handleReceivePayment = async (saleId: string, receivedAmount: number, markReceived: boolean) => {
+    try {
+      const res = await fetch(`/api/sales/${saleId}/payment`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(markReceived ? { receivedAmount, status: 'RECEIVED' } : { receivedAmount }),
+      })
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to save payment')
+      }
+      toast.success(markReceived ? 'Payment marked as received' : 'Received amount updated')
+      setSelectedDrawerSale(null)
+      refreshAll()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save payment')
+      throw err
+    }
+  }
+
   // Change whose account the order money goes to
   const handleSetReceivedBy = async (saleIds: string[], personId: string | null) => {
     try {
@@ -311,6 +334,7 @@ export default function Home() {
           setFilters={setOrderFilters}
           onSetSupplierPayment={handleSetSupplierPayment}
           onSetCustomerPayment={handleSetCustomerPayment}
+          onReceivePayment={(sale) => setReceiveModal({ sale, mode: 'receive' })}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
         />
       )}
@@ -370,6 +394,14 @@ export default function Home() {
         onSetSupplierPayment={handleSetSupplierPayment}
         onSetCustomerPayment={handleSetCustomerPayment}
         onSetReceivedBy={handleSetReceivedBy}
+        onReceivePayment={(sale, mode) => setReceiveModal({ sale, mode })}
+      />
+
+      <ReceivePaymentModal
+        sale={receiveModal?.sale ?? null}
+        mode={receiveModal?.mode ?? 'receive'}
+        onClose={() => setReceiveModal(null)}
+        onConfirm={handleReceivePayment}
       />
 
       {/* Guided Step-by-Step Wizards & Modals */}

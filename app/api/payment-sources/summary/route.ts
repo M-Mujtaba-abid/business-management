@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { payoutAmount } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +11,7 @@ export async function GET() {
       prisma.paymentSource.findMany({ orderBy: { name: 'asc' } }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { id: true, paymentSourceId: true, soldPrice: true, quantity: true, createdAt: true },
+        select: { id: true, paymentSourceId: true, soldPrice: true, quantity: true, receivedAmount: true, createdAt: true },
       }),
     ])
 
@@ -23,7 +24,7 @@ export async function GET() {
       return {
         id,
         name,
-        pendingAmount: own.reduce((acc, s) => acc + s.soldPrice * s.quantity, 0),
+        pendingAmount: own.reduce((acc, s) => acc + payoutAmount(s), 0),
         pendingCount: own.length,
         pendingSaleIds: own.map((s) => s.id),
         oldestPendingAt: oldest,

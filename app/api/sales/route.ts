@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       paymentSourceId,
       orderSourceId,
       receivedById,
+      expectedAmount,
     } = body
 
     // Customer details are optional in the quick order flow
@@ -211,6 +212,11 @@ export async function POST(request: NextRequest) {
           supplierPaidAt: paymentStatus === 'PAID' ? new Date() : null,
           paymentSourceId: paymentSourceId || null,
           orderSourceId: orderSourceId || null,
+          // Expected payout if it differs from the sale (e.g. Daraz / courier cuts); blank = full sale
+          receivedAmount:
+            expectedAmount !== undefined && expectedAmount !== null && expectedAmount !== '' && !isNaN(parseFloat(expectedAmount))
+              ? parseFloat(expectedAmount)
+              : null,
           receivedById: receivedById || null,
           paymentStatus: 'NOT_RECEIVED',
           profit: 0,

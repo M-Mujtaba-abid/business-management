@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus } from '@prisma/client'
+import { deliveredProfit } from '@/lib/saleMoney'
 
 export async function PATCH(
   request: NextRequest,
@@ -35,12 +36,8 @@ export async function PATCH(
     let savedReturnLoss = 0
 
     if (targetStatus === 'DELIVERED') {
-      // Delivered: Cash realized. profit = (soldPrice - costPrice) * quantity - DC - petrol - GST
-      calculatedProfit =
-        (existingSale.soldPrice - existingSale.costPrice) * existingSale.quantity -
-        existingSale.deliveryCharge -
-        existingSale.petrolCost -
-        existingSale.gstAmount
+      // Delivered: payout (sale, or the edited received amount) - cover cost - DC - petrol - GST
+      calculatedProfit = deliveredProfit(existingSale)
 
       // Stock deduction if moving to DELIVERED from non-DELIVERED
       if (prevStatus !== 'DELIVERED' && existingSale.productId) {

@@ -17,6 +17,7 @@ interface OrderDetailsDrawerProps {
   onSetSupplierPayment: (saleIds: string[], status: 'PAID' | 'PENDING') => Promise<void>
   onSetCustomerPayment: (saleIds: string[], status: 'RECEIVED' | 'NOT_RECEIVED') => Promise<void>
   onSetReceivedBy: (saleIds: string[], personId: string | null) => Promise<void>
+  onReceivePayment: (sale: Sale, mode: 'receive' | 'edit') => void
 }
 
 export default function OrderDetailsDrawer({
@@ -29,6 +30,7 @@ export default function OrderDetailsDrawer({
   onSetSupplierPayment,
   onSetCustomerPayment,
   onSetReceivedBy,
+  onReceivePayment,
 }: OrderDetailsDrawerProps) {
   const [people, setPeople] = useState<{ id: string; name: string }[]>([])
 
@@ -189,12 +191,35 @@ export default function OrderDetailsDrawer({
                   </h3>
                   <PaymentBadge status={sale.paymentStatus} />
                 </div>
-                <div className="text-xs text-slate-700">
-                  From <span className="font-semibold">{sale.paymentSource?.name || 'no source set'}</span>:{' '}
-                  <span className="font-mono font-bold">{formatPKR(sale.soldPrice * sale.quantity)}</span>
-                  {sale.paymentStatus === 'RECEIVED' && sale.paymentReceivedAt && (
-                    <span className="text-slate-500"> · received on {new Date(sale.paymentReceivedAt).toLocaleDateString()}</span>
-                  )}
+                <div className="text-xs text-slate-700 space-y-1">
+                  <div>
+                    From <span className="font-semibold">{sale.paymentSource?.name || 'no source set'}</span>
+                    {sale.paymentStatus === 'RECEIVED' && sale.paymentReceivedAt && (
+                      <span className="text-slate-500"> · received on {new Date(sale.paymentReceivedAt).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>
+                      {sale.paymentStatus === 'RECEIVED' ? 'Received' : 'Expected'}:{' '}
+                      <span className="font-mono font-bold">
+                        {formatPKR(sale.receivedAmount ?? sale.soldPrice * sale.quantity)}
+                      </span>
+                      {sale.receivedAmount != null && sale.receivedAmount !== sale.soldPrice * sale.quantity && (
+                        <span className={sale.receivedAmount < sale.soldPrice * sale.quantity ? 'text-rose-600' : 'text-emerald-600'}>
+                          {' '}
+                          ({sale.receivedAmount < sale.soldPrice * sale.quantity ? '−' : '+'}
+                          {formatPKR(Math.abs(sale.soldPrice * sale.quantity - sale.receivedAmount))}{' '}
+                          {sale.receivedAmount < sale.soldPrice * sale.quantity ? 'cut' : 'extra'})
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      onClick={() => onReceivePayment(sale, 'edit')}
+                      className="px-2 py-1 rounded-lg bg-white border border-slate-300 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 shrink-0"
+                    >
+                      Edit amount
+                    </button>
+                  </div>
                 </div>
                 <label className="flex items-center justify-between gap-2 text-xs text-slate-700">
                   <span>Money goes to</span>
@@ -214,8 +239,12 @@ export default function OrderDetailsDrawer({
                 </label>
                 <button
                   onClick={async () => {
-                    await onSetCustomerPayment([sale.id], sale.paymentStatus === 'RECEIVED' ? 'NOT_RECEIVED' : 'RECEIVED')
-                    onClose()
+                    if (sale.paymentStatus === 'RECEIVED') {
+                      await onSetCustomerPayment([sale.id], 'NOT_RECEIVED')
+                      onClose()
+                    } else {
+                      onReceivePayment(sale, 'receive')
+                    }
                   }}
                   className={`w-full px-3 py-2 text-xs font-bold rounded-xl transition ${
                     sale.paymentStatus === 'RECEIVED'

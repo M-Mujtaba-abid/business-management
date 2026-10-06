@@ -58,6 +58,7 @@ interface StatsProps {
     supplierOverdue?: boolean
     returnedItemsCount?: number
     orderExpenses?: number
+    paymentFees?: number
     receivablePendingTotal?: number
     receivablePendingCount?: number
     expenseBreakdown?: { label: string; amount: number }[]
@@ -141,20 +142,25 @@ export default function DashboardStats({
   )
 
   const orderExpenses = stats.orderExpenses || 0
-  const coverCost = Math.max(0, stats.totalRevenue - stats.grossProfit - orderExpenses)
+  const paymentFees = stats.paymentFees || 0 // tax / fees cut by Daraz, couriers, etc.
+  const coverCost = Math.max(0, stats.totalRevenue - stats.grossProfit - orderExpenses - paymentFees)
   const netPositive = stats.trueNetProfit >= 0
 
   const waterfall: WaterfallStep[] = useMemo(
-    () => [
+    (): WaterfallStep[] => [
       { label: 'Sales', value: stats.totalRevenue, kind: 'total', color: C.blue },
       { label: 'Cover cost', value: coverCost, kind: 'down', color: C.orange },
       { label: 'DC / Petrol / GST', value: orderExpenses, kind: 'down', color: C.orange },
+      // Only shown when Daraz / courier payouts were cut (or topped up)
+      ...(Math.abs(paymentFees) >= 0.5
+        ? [{ label: 'Payment cuts', value: paymentFees, kind: 'down' as const, color: C.orange }]
+        : []),
       { label: 'Order Profit', value: stats.grossProfit, kind: 'total', color: C.aqua },
       { label: 'Expenses', value: stats.generalExpenses, kind: 'down', color: C.orange },
       { label: 'Return loss', value: stats.returnLoss, kind: 'down', color: C.orange },
       { label: 'Net Profit', value: stats.trueNetProfit, kind: 'total', color: netPositive ? C.green : C.red },
     ],
-    [stats.totalRevenue, coverCost, orderExpenses, stats.grossProfit, stats.generalExpenses, stats.returnLoss, stats.trueNetProfit, netPositive]
+    [stats.totalRevenue, coverCost, orderExpenses, paymentFees, stats.grossProfit, stats.generalExpenses, stats.returnLoss, stats.trueNetProfit, netPositive]
   )
 
   // Skeleton only on the very first load; later refreshes keep the charts on screen

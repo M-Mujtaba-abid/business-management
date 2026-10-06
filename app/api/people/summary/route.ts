@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { payoutAmount } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
 // Per person:
-//  - received:   order money received (sale minus cover cost, since the cover cost is owed back to the supplier)
+//  - received:   order money received (actual payout minus cover cost, since the cover cost is owed back to the supplier)
 //  - expenses:   business expenses paid from their money
 //  - withdrawn:  money they took out
 //  - inHand:     received - expenses - withdrawn, all time (what they should be holding now)
@@ -32,11 +33,11 @@ export async function GET(request: NextRequest) {
       prisma.person.findMany({ orderBy: { name: 'asc' } }),
       prisma.sale.findMany({
         where: { paymentStatus: 'RECEIVED' },
-        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, paymentReceivedAt: true },
+        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, paymentReceivedAt: true },
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true },
+        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true },
       }),
       prisma.expense.findMany({
         where: { paidById: { not: null } },
@@ -47,7 +48,9 @@ export async function GET(request: NextRequest) {
       }),
     ])
 
-    const net = (s: { soldPrice: number; costPrice: number; quantity: number }) => (s.soldPrice - s.costPrice) * s.quantity
+    // Actual payout (edited received amount, else full sale) minus the cover cost owed to the supplier
+    const net = (s: { soldPrice: number; costPrice: number; quantity: number; receivedAmount: number | null }) =>
+      payoutAmount(s) - s.costPrice * s.quantity
     const sum = (list: number[]) => list.reduce((acc, n) => acc + n, 0)
 
     const build = (id: string | null, name: string) => {

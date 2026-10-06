@@ -32,6 +32,7 @@ const emptyForm = {
   deliveryCharge: '',
   petrolCost: '',
   gstAmount: '',
+  expectedAmount: '',
   customerName: '',
   city: '',
   address: '',
@@ -273,6 +274,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
           paymentSourceId: paymentSourceId && paymentSourceId !== OTHER_SOURCE ? paymentSourceId : null,
           orderSourceId: orderSourceId && orderSourceId !== OTHER_SOURCE ? orderSourceId : null,
           receivedById: receivedById && receivedById !== OTHER_SOURCE ? receivedById : null,
+          expectedAmount: form.expectedAmount || null,
           categoryId: form.categoryId || null,
         }),
       })
@@ -303,7 +305,10 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
   const gst = parseFloat(form.gstAmount) || 0
   const saleTotal = sold * qty
   const costTotal = cost * qty
-  const profit = saleTotal - costTotal - dc - petrol - gst
+  // What will actually reach the account (blank = full sale); the difference is a tax / fee cut
+  const expected = form.expectedAmount !== '' && !isNaN(parseFloat(form.expectedAmount)) ? parseFloat(form.expectedAmount) : saleTotal
+  const payoutCut = saleTotal - expected
+  const profit = expected - costTotal - dc - petrol - gst
   const margin = saleTotal > 0 ? ((profit / saleTotal) * 100).toFixed(1) : '0.0'
   const formatPKR = (n: number) => `Rs. ${n.toLocaleString()}`
 
@@ -533,6 +538,23 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
             )}
           </div>
 
+          {/* Expected payout (Daraz / courier may cut tax or fees) */}
+          <div>
+            <label className={labelClass}>Expected to receive (Rs)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.expectedAmount}
+              onChange={(e) => set('expectedAmount', e.target.value)}
+              placeholder={saleTotal > 0 ? `${saleTotal} (same as sale)` : 'Same as sale price'}
+              className={inputClass}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Leave blank if the full sale amount will come. You can change it when the payment arrives.
+            </p>
+          </div>
+
           {/* Whose account the money lands in */}
           <div>
             <label className={labelClass}>Money goes to</label>
@@ -692,6 +714,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
               <span className="text-slate-500">− DC + Petrol + GST</span>
               <span className="text-slate-700">{formatPKR(dc + petrol + gst)}</span>
             </div>
+            {Math.abs(payoutCut) >= 0.5 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">{payoutCut > 0 ? '− Payment cut (tax / fees)' : '+ Extra received'}</span>
+                <span className="text-slate-700">{formatPKR(Math.abs(payoutCut))}</span>
+              </div>
+            )}
             <div className="flex justify-between pt-1.5 border-t border-slate-300/60 text-sm font-bold">
               <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>Profit</span>
               <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>

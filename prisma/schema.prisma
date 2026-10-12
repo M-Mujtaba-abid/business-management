@@ -215,6 +215,8 @@ model Sale {
   paymentReceivedAt      DateTime?
   // Actual (or expected, until received) payout for the order; null = full sale amount
   receivedAmount         Float?
+  // Products bought together by one customer share a parcelId (null = single-product order)
+  parcelId               String?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
@@ -235,6 +237,7 @@ model Sale {
   @@index([paymentStatus])
   @@index([orderSourceId])
   @@index([receivedById])
+  @@index([parcelId])
 }
 
 model CityDeliveryRate {

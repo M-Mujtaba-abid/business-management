@@ -86,7 +86,7 @@ export default function Sidebar({
   }
 
   const sidebarContent = (
-    <div className="h-full flex flex-col justify-between bg-white border-r border-slate-200 text-slate-800 w-60 p-4">
+    <div className="h-full flex flex-col justify-between bg-white border-r border-slate-200 text-slate-800 w-60 p-4 overflow-y-auto">
       <div className="space-y-6">
 
         {/* Brand Header */}
@@ -191,7 +191,7 @@ export default function Sidebar({
   return (
     <>
       {/* Desktop Persistent Sidebar */}
-      <div className="hidden lg:block h-screen sticky top-0 shrink-0">
+      <div className="hidden lg:block fixed inset-y-0 left-0 z-40 w-60">
         {sidebarContent}
       </div>
 

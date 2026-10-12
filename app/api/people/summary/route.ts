@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { payoutAmount } from '@/lib/saleMoney'
+import { payoutAmount, countOrders } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,11 +33,11 @@ export async function GET(request: NextRequest) {
       prisma.person.findMany({ orderBy: { name: 'asc' } }),
       prisma.sale.findMany({
         where: { paymentStatus: 'RECEIVED' },
-        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, paymentReceivedAt: true },
+        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, paymentReceivedAt: true },
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true },
+        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true },
       }),
       prisma.expense.findMany({
         where: { paidById: { not: null } },
@@ -66,14 +66,14 @@ export async function GET(request: NextRequest) {
         id,
         name,
         receivedAmount: sum(gotInPeriod.map(net)),
-        receivedCount: gotInPeriod.length,
+        receivedCount: countOrders(gotInPeriod),
         expensesAmount: sum(spentInPeriod.map((e) => e.amount)),
         expensesCount: spentInPeriod.length,
         withdrawnAmount: sum(takenInPeriod.map((w) => w.amount)),
         withdrawnCount: takenInPeriod.length,
         inHand: sum(got.map(net)) - sum(spent.map((e) => e.amount)) - sum(taken.map((w) => w.amount)),
         expectedAmount: sum(coming.map(net)),
-        expectedCount: coming.length,
+        expectedCount: countOrders(coming),
       }
     }
 

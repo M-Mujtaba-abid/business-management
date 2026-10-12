@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
+import { splitByWeight } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
@@ -123,49 +124,93 @@ export async function GET(request: NextRequest) {
   }
 }
 
+interface ItemInput {
+  productId?: string | null
+  productName?: string
+  quantity?: number | string
+  costPrice?: number | string
+  soldPrice?: number | string
+  categoryId?: string | null
+  supplierId?: string | null
+  returnedItemId?: string | null
+  supplierPaymentStatus?: 'PAID' | 'PENDING'
+}
+
+const num = (v: unknown) => (v === undefined || v === null || v === '' ? NaN : parseFloat(String(v)))
+
+// Creates an order. Accepts one product (fields on the body) or a parcel of products (`items`).
+// A parcel's products share a parcelId; its DC / petrol / GST and expected payout are split
+// across the products in proportion to each product's sale total.
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      productId,
-      productName,
       customerName,
       address,
       city,
-      quantity = 1,
-      costPrice,
-      soldPrice,
       deliveryCharge = 0,
       deductDeliveryOnReturn = true,
-      categoryId,
-      supplierId,
       petrolCost = 0,
       gstAmount = 0,
-      returnedItemId,
-      supplierPaymentStatus = 'PENDING',
       paymentSourceId,
       orderSourceId,
       receivedById,
       expectedAmount,
     } = body
 
+    const rawItems: ItemInput[] = Array.isArray(body.items) && body.items.length > 0 ? body.items : [body]
+
     // Customer details are optional in the quick order flow
     const customer = (customerName || '').trim() || 'Walk-in'
     const addr = (address || '').trim()
     const cityName = (city || '').trim() || 'General'
 
-    if (!productName || !String(productName).trim() || costPrice === undefined || costPrice === '' || soldPrice === undefined || soldPrice === '') {
-      return NextResponse.json({ error: 'Product name, cost price and sale price are required.' }, { status: 400 })
+    const items: {
+      productId: string | null
+      productName: string
+      quantity: number
+      costPrice: number
+      soldPrice: number
+      categoryId: string | null
+      supplierId: string | null
+      returnedItemId: string | null
+      supplierPaid: boolean
+    }[] = []
+    for (const [i, it] of rawItems.entries()) {
+      const name = String(it.productName || '').trim()
+      const cost = num(it.costPrice)
+      const sold = num(it.soldPrice)
+      const label = rawItems.length > 1 ? `Product ${i + 1}: ` : ''
+      if (!name || isNaN(cost) || isNaN(sold)) {
+        return NextResponse.json({ error: `${label}product name, buy price and sale price are required.` }, { status: 400 })
+      }
+      items.push({
+        productId: it.productId || null,
+        productName: name,
+        quantity: parseInt(String(it.quantity ?? 1), 10) || 1,
+        costPrice: cost,
+        soldPrice: sold,
+        categoryId: it.categoryId || null,
+        supplierId: it.supplierId || null,
+        returnedItemId: it.returnedItemId || null,
+        supplierPaid: it.supplierPaymentStatus === 'PAID',
+      })
     }
 
-    const qty = parseInt(quantity, 10) || 1
-    const cost_num = parseFloat(costPrice)
-    const sold_num = parseFloat(soldPrice)
+    const returnedIds = items.map((i) => i.returnedItemId).filter(Boolean) as string[]
+    if (new Set(returnedIds).size !== returnedIds.length) {
+      return NextResponse.json({ error: 'The same returned item is used twice.' }, { status: 400 })
+    }
+
     const delivery_num = parseFloat(deliveryCharge) || 0
-
-    if (isNaN(cost_num) || isNaN(sold_num)) {
-      return NextResponse.json({ error: 'Cost price and sale price must be numbers.' }, { status: 400 })
-    }
+    const weights = items.map((i) => i.soldPrice * i.quantity)
+    const dcShares = splitByWeight(delivery_num, weights)
+    const petrolShares = splitByWeight(parseFloat(petrolCost) || 0, weights)
+    const gstShares = splitByWeight(parseFloat(gstAmount) || 0, weights)
+    const expected = num(expectedAmount)
+    // Expected payout if it differs from the sale (e.g. Daraz / courier cuts); blank = full sale
+    const payoutShares = isNaN(expected) ? null : splitByWeight(expected, weights)
+    const parcelId = items.length > 1 ? `parcel_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}` : null
 
     // Auto-upsert City Delivery Rate
     if (cityName !== 'General' && delivery_num > 0) {
@@ -176,66 +221,65 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const sale = await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       // A cover taken from returned stock was already paid for on its original order
-      if (returnedItemId) {
-        const item = await tx.returnedItem.findUnique({ where: { id: returnedItemId } })
+      for (const id of returnedIds) {
+        const item = await tx.returnedItem.findUnique({ where: { id } })
         if (!item || item.status !== 'AVAILABLE') {
-          throw new Error('This returned item is no longer available.')
+          throw new Error('A returned item you picked is no longer available.')
         }
       }
 
-      const paymentStatus = returnedItemId
-        ? 'NOT_APPLICABLE'
-        : supplierPaymentStatus === 'PAID'
-        ? 'PAID'
-        : 'PENDING'
+      const rows = []
+      for (const [i, it] of items.entries()) {
+        const supplierStatus = it.returnedItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
+        const saleTotal = it.soldPrice * it.quantity
+        const payout = payoutShares ? payoutShares[i] : null
 
-      // Default status is DISPATCHED. Profit realized = 0 while pending dispatch.
-      const created = await tx.sale.create({
-        data: {
-          productId: productId || null,
-          productName: String(productName).trim(),
-          customerName: customer,
-          address: addr,
-          city: cityName,
-          quantity: qty,
-          costPrice: cost_num,
-          soldPrice: sold_num,
-          deliveryCharge: delivery_num,
-          petrolCost: parseFloat(petrolCost) || 0,
-          gstAmount: parseFloat(gstAmount) || 0,
-          categoryId: categoryId || null,
-          supplierId: returnedItemId ? null : supplierId || null,
-          returnedItemId: returnedItemId || null,
-          supplierPaymentStatus: paymentStatus,
-          supplierPaidAt: paymentStatus === 'PAID' ? new Date() : null,
-          paymentSourceId: paymentSourceId || null,
-          orderSourceId: orderSourceId || null,
-          // Expected payout if it differs from the sale (e.g. Daraz / courier cuts); blank = full sale
-          receivedAmount:
-            expectedAmount !== undefined && expectedAmount !== null && expectedAmount !== '' && !isNaN(parseFloat(expectedAmount))
-              ? parseFloat(expectedAmount)
-              : null,
-          receivedById: receivedById || null,
-          paymentStatus: 'NOT_RECEIVED',
-          profit: 0,
-          status: 'DISPATCHED',
-          deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
-        },
-      })
-
-      if (returnedItemId) {
-        await tx.returnedItem.update({
-          where: { id: returnedItemId },
-          data: { status: 'USED', usedInSaleId: created.id },
+        // Default status is DISPATCHED. Profit realized = 0 while pending dispatch.
+        const row = await tx.sale.create({
+          data: {
+            productId: it.productId,
+            productName: it.productName,
+            customerName: customer,
+            address: addr,
+            city: cityName,
+            quantity: it.quantity,
+            costPrice: it.costPrice,
+            soldPrice: it.soldPrice,
+            deliveryCharge: dcShares[i],
+            petrolCost: petrolShares[i],
+            gstAmount: gstShares[i],
+            categoryId: it.categoryId,
+            supplierId: it.returnedItemId ? null : it.supplierId,
+            returnedItemId: it.returnedItemId,
+            supplierPaymentStatus: supplierStatus,
+            supplierPaidAt: supplierStatus === 'PAID' ? new Date() : null,
+            paymentSourceId: paymentSourceId || null,
+            orderSourceId: orderSourceId || null,
+            receivedAmount: payout !== null && Math.abs(payout - saleTotal) >= 0.005 ? payout : null,
+            receivedById: receivedById || null,
+            parcelId,
+            paymentStatus: 'NOT_RECEIVED',
+            profit: 0,
+            status: 'DISPATCHED',
+            deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
+          },
         })
-      }
 
-      return created
+        if (it.returnedItemId) {
+          await tx.returnedItem.update({
+            where: { id: it.returnedItemId },
+            data: { status: 'USED', usedInSaleId: row.id },
+          })
+        }
+        rows.push(row)
+      }
+      return rows
     })
 
-    return NextResponse.json(sale, { status: 201 })
+    // Single product keeps the old response shape
+    return NextResponse.json(created.length === 1 ? created[0] : { parcelId, sales: created }, { status: 201 })
   } catch (error: any) {
     console.error('Create sale error:', error)
     return NextResponse.json({ error: error.message || 'Failed to create sale' }, { status: 500 })

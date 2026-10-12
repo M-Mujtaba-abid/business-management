@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
+import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
 export type CustomerPaymentStatus = 'NOT_RECEIVED' | 'RECEIVED' | 'NOT_APPLICABLE'
@@ -35,6 +36,7 @@ export interface Sale {
   paymentStatus: CustomerPaymentStatus
   paymentReceivedAt?: string | null
   receivedAmount?: number | null
+  parcelId?: string | null
   paymentSource?: { id: string; name: string } | null
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
@@ -84,6 +86,7 @@ interface OrderListProps {
   onSetSupplierPayment: (saleIds: string[], status: 'PAID' | 'PENDING') => Promise<void>
   onSetCustomerPayment: (saleIds: string[], status: 'RECEIVED' | 'NOT_RECEIVED') => Promise<void>
   onReceivePayment: (sale: Sale) => void // opens the "actual amount received" popup
+  onEditOrder: (items: Sale[]) => void // opens the order form in edit mode
   onSelectOrder: (sale: Sale) => void
 }
 
@@ -144,6 +147,28 @@ export function SupplierPayBadge({
   )
 }
 
+// Supplier payment for an order; a parcel shows Paid only when every product's supplier is paid
+function GroupSupplierBadge({ g, onClick }: { g: OrderGroup; onClick?: () => void }) {
+  if (g.items.length === 1) return <SupplierPayBadge status={g.lead.supplierPaymentStatus} onClick={onClick} />
+  if (g.supplierTracked === 0) return <span className="text-[11px] text-slate-400">—</span>
+  const allPaid = g.supplierPending === 0
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={allPaid ? 'Click to mark all Pending' : 'Click to mark all Paid'}
+      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 whitespace-nowrap transition ${
+        allPaid
+          ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/25'
+          : 'bg-amber-500/15 text-amber-600 border-amber-500/30 hover:bg-amber-500/25'
+      }`}
+    >
+      {allPaid ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+      {allPaid ? 'Paid' : `Pending ${g.supplierPending}/${g.supplierTracked}`}
+    </button>
+  )
+}
+
 export default function OrderList({
   sales,
   isLoading,
@@ -161,6 +186,7 @@ export default function OrderList({
   onSetSupplierPayment,
   onSetCustomerPayment,
   onReceivePayment,
+  onEditOrder,
   onSelectOrder,
 }: OrderListProps) {
   const formatPKR = (amt: number) => `Rs. ${amt.toLocaleString()}`
@@ -206,8 +232,22 @@ export default function OrderList({
     .filter((s) => s.supplierPaymentStatus === 'PENDING')
     .reduce((acc, s) => acc + s.costPrice * s.quantity, 0)
 
-  const toggleSelected = (id: string) =>
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  // A parcel is one row: it is selected, paid and received as a whole
+  const groups = useMemo(() => groupSales(sales), [sales])
+
+  const toggleGroup = (g: OrderGroup) =>
+    setSelectedIds((prev) =>
+      g.ids.every((id) => prev.includes(id)) ? prev.filter((x) => !g.ids.includes(x)) : Array.from(new Set([...prev, ...g.ids]))
+    )
+
+  // Receiving asks for the actual amount; undoing goes straight back to "not received"
+  const togglePayment = (g: OrderGroup) =>
+    g.lead.paymentStatus === 'RECEIVED' ? onSetCustomerPayment(g.ids, 'NOT_RECEIVED') : onReceivePayment(groupAsSale(g))
+
+  const toggleSupplier = (g: OrderGroup) => onSetSupplierPayment(g.ids, g.supplierPending > 0 ? 'PAID' : 'PENDING')
+
+  const groupTitle = (g: OrderGroup) =>
+    g.items.length === 1 ? g.lead.productName : g.items.map((i) => i.productName).join(', ')
 
   const runBulk = async (action: () => Promise<void>) => {
     setIsBulkUpdating(true)
@@ -428,7 +468,7 @@ export default function OrderList({
       {selectedIds.length > 0 && (
         <div className="sticky bottom-3 z-20 lg:static flex flex-wrap items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 sm:px-4 py-2.5 text-xs shadow-lg lg:shadow-none">
           <span className="text-emerald-700 font-semibold">
-            {selectedIds.length} order(s) selected · to receive {formatPKR(selectedToReceive)} · owed to supplier{' '}
+            {groups.filter((g) => g.ids.some((id) => selectedIds.includes(id))).length} order(s) selected · to receive {formatPKR(selectedToReceive)} · owed to supplier{' '}
             {formatPKR(selectedOwedToSupplier)}
           </span>
           <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
@@ -471,7 +511,7 @@ export default function OrderList({
         </div>
       ) : (
         <>
-        {/* Phones & tablets: one card per order */}
+        {/* Phones & tablets: one card per order / parcel */}
         <div className="lg:hidden space-y-3">
           <label className="flex items-center gap-2 text-xs text-slate-500 px-1">
             <input
@@ -480,83 +520,92 @@ export default function OrderList({
               onChange={() => setSelectedIds(allSelected ? [] : sales.map((s) => s.id))}
               className="h-4 w-4 accent-emerald-500"
             />
-            Select all ({sales.length})
+            Select all ({groups.length})
           </label>
 
-          {sales.map((sale) => (
-            <div
-              key={sale.id}
-              onClick={() => onSelectOrder(sale)}
-              className={`rounded-xl border p-3 space-y-2.5 active:bg-slate-50 transition cursor-pointer ${
-                selectedIds.includes(sale.id) ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-white'
-              }`}
-            >
-              <div className="flex items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(sale.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={() => toggleSelected(sale.id)}
-                  className="h-4 w-4 mt-0.5 accent-emerald-500 shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-sm text-slate-900 break-words">{sale.productName}</div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-bold text-emerald-600 font-mono">{formatPKR(sale.soldPrice * sale.quantity)}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">Profit {formatPKR(sale.profit)}</div>
+          {groups.map((g) => {
+            const sale = g.lead
+            const isSelected = g.ids.every((id) => selectedIds.includes(id))
+            return (
+              <div
+                key={g.key}
+                onClick={() => onSelectOrder(sale)}
+                className={`rounded-xl border p-3 space-y-2.5 active:bg-slate-50 transition cursor-pointer ${
+                  isSelected ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleGroup(g)}
+                    className="h-4 w-4 mt-0.5 accent-emerald-500 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {g.items.length > 1 && (
+                          <span className="inline-block mb-0.5 px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold">
+                            {g.items.length} items
+                          </span>
+                        )}
+                        <div className="font-semibold text-sm text-slate-900 break-words">{groupTitle(g)}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-bold text-emerald-600 font-mono">{formatPKR(g.saleTotal)}</div>
+                        <div className="text-[11px] text-slate-500 font-mono">Profit {formatPKR(g.profit)}</div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onEditOrder(g.items)
+                          }}
+                          className="mt-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-semibold"
+                        >
+                          Edit
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-500 mt-1">
-                    {sale.orderSource?.name && (
-                      <span className="px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">
-                        {sale.orderSource.name}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-500 mt-1">
+                      {sale.orderSource?.name && (
+                        <span className="px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">
+                          {sale.orderSource.name}
+                        </span>
+                      )}
+                      {g.items.length === 1 && sale.category?.name && <span className="text-sky-600">{sale.category.name}</span>}
+                      {g.items.length === 1 && <span>Qty {sale.quantity}</span>}
+                      <span>· {new Date(sale.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
+                      <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                        <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
+                        <span className="truncate">{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                      </div>
                     )}
-                    {sale.category?.name && <span className="text-sky-600">{sale.category.name}</span>}
-                    <span>Qty {sale.quantity}</span>
-                    <span>· {new Date(sale.createdAt).toLocaleDateString()}</span>
                   </div>
-                  {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
-                    <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                      <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                      <span className="truncate">{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
-                <div className="space-y-1 min-w-0">
-                  <div>Order</div>
-                  <StatusBadge status={sale.status} />
-                </div>
-                <div className="space-y-1 min-w-0">
-                  <div className="truncate">
-                    {sale.paymentSource?.name || 'Payment'}
-                    {sale.receivedBy?.name ? ` → ${sale.receivedBy.name}` : ''}
+                <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-500 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="space-y-1 min-w-0">
+                    <div>Order</div>
+                    <StatusBadge status={sale.status} />
                   </div>
-                  <PaymentBadge
-                    status={sale.paymentStatus}
-                    onClick={() =>
-                      sale.paymentStatus === 'RECEIVED' ? onSetCustomerPayment([sale.id], 'NOT_RECEIVED') : onReceivePayment(sale)
-                    }
-                  />
-                </div>
-                <div className="space-y-1 min-w-0">
-                  <div className="truncate">
-                    {sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : 'Supplier')}
+                  <div className="space-y-1 min-w-0">
+                    <div className="truncate">
+                      {sale.paymentSource?.name || 'Payment'}
+                      {sale.receivedBy?.name ? ` → ${sale.receivedBy.name}` : ''}
+                    </div>
+                    <PaymentBadge status={sale.paymentStatus} onClick={() => togglePayment(g)} />
                   </div>
-                  <SupplierPayBadge
-                    status={sale.supplierPaymentStatus}
-                    onClick={() =>
-                      onSetSupplierPayment([sale.id], sale.supplierPaymentStatus === 'PAID' ? 'PENDING' : 'PAID')
-                    }
-                  />
+                  <div className="space-y-1 min-w-0">
+                    <div className="truncate">{g.supplierNames.join(', ') || 'Supplier'}</div>
+                    <GroupSupplierBadge g={g} onClick={() => toggleSupplier(g)} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Desktop: full table */}
@@ -584,98 +633,110 @@ export default function OrderList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100/60">
-              {sales.map((sale) => (
-                <tr
-                  key={sale.id}
-                  onClick={() => onSelectOrder(sale)}
-                  className="hover:bg-slate-100/40 transition cursor-pointer"
-                >
-                  {/* Select for bulk payment updates */}
-                  <td className="pl-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(sale.id)}
-                      onChange={() => toggleSelected(sale.id)}
-                      className="h-3.5 w-3.5 accent-emerald-500"
-                    />
-                  </td>
+              {groups.map((g) => {
+                const sale = g.lead
+                return (
+                  <tr
+                    key={g.key}
+                    onClick={() => onSelectOrder(sale)}
+                    className="hover:bg-slate-100/40 transition cursor-pointer align-top"
+                  >
+                    {/* Select for bulk payment updates */}
+                    <td className="pl-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={g.ids.every((id) => selectedIds.includes(id))}
+                        onChange={() => toggleGroup(g)}
+                        className="h-3.5 w-3.5 accent-emerald-500"
+                      />
+                    </td>
 
-                  {/* Order Item */}
-                  <td className="px-4 py-3.5">
-                    <div className="font-semibold text-slate-900">{sale.productName}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {sale.orderSource?.name && (
-                        <span className="inline-block mr-1 px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">
-                          {sale.orderSource.name}
-                        </span>
-                      )}
-                      {sale.category?.name && <span className="text-sky-600">{sale.category.name} · </span>}
-                      <span className="font-mono">Qty: {sale.quantity}</span>
-                    </div>
-                    {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
-                      <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                        <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                        <span>{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                    {/* Order Item(s) */}
+                    <td className="px-4 py-3.5 max-w-[280px]">
+                      <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                        {g.items.length > 1 && (
+                          <span className="px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold shrink-0">
+                            {g.items.length} items
+                          </span>
+                        )}
+                        <span className="truncate">{groupTitle(g)}</span>
                       </div>
-                    )}
-                  </td>
+                      <div className="text-[11px] text-slate-500">
+                        {sale.orderSource?.name && (
+                          <span className="inline-block mr-1 px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">
+                            {sale.orderSource.name}
+                          </span>
+                        )}
+                        {g.items.length === 1 ? (
+                          <>
+                            {sale.category?.name && <span className="text-sky-600">{sale.category.name} · </span>}
+                            <span className="font-mono">Qty: {sale.quantity}</span>
+                          </>
+                        ) : (
+                          <span>{g.items.map((i) => `${i.productName} ×${i.quantity}`).join(' · ')}</span>
+                        )}
+                      </div>
+                      {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                          <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
+                          <span>{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                        </div>
+                      )}
+                    </td>
 
-                  {/* Supplier */}
-                  <td className="px-4 py-3.5 text-slate-700">
-                    {sale.supplier?.name || (sale.returnedItemId ? <span className="text-emerald-600">♻ Returned stock</span> : '—')}
-                  </td>
+                    {/* Supplier(s) */}
+                    <td className="px-4 py-3.5 text-slate-700">
+                      {g.supplierNames.length ? g.supplierNames.join(', ') : '—'}
+                    </td>
 
-                  {/* Pricing */}
-                  <td className="px-4 py-3.5 font-mono">
-                    <div className="text-emerald-600 font-bold">{formatPKR(sale.soldPrice * sale.quantity)}</div>
-                    <div className="text-slate-500 text-[11px]">Profit: {formatPKR(sale.profit)}</div>
-                  </td>
+                    {/* Pricing */}
+                    <td className="px-4 py-3.5 font-mono">
+                      <div className="text-emerald-600 font-bold">{formatPKR(g.saleTotal)}</div>
+                      <div className="text-slate-500 text-[11px]">Profit: {formatPKR(g.profit)}</div>
+                    </td>
 
-                  {/* Status Badge */}
-                  <td className="px-4 py-3.5">
-                    <StatusBadge status={sale.status} />
-                  </td>
+                    {/* Status Badge */}
+                    <td className="px-4 py-3.5">
+                      <StatusBadge status={sale.status} />
+                    </td>
 
-                  {/* Payment from Daraz / courier / other */}
-                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                    <div className="text-[11px] text-slate-600 mb-1 whitespace-nowrap">
-                      {sale.paymentSource?.name || '—'}
-                      {sale.receivedBy?.name && <span className="text-slate-500"> → <b className="text-slate-700">{sale.receivedBy.name}</b></span>}
-                    </div>
-                    <PaymentBadge
-                      status={sale.paymentStatus}
-                      onClick={() =>
-                        sale.paymentStatus === 'RECEIVED' ? onSetCustomerPayment([sale.id], 'NOT_RECEIVED') : onReceivePayment(sale)
-                      }
-                    />
-                  </td>
+                    {/* Payment from Daraz / courier / other */}
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="text-[11px] text-slate-600 mb-1 whitespace-nowrap">
+                        {sale.paymentSource?.name || '—'}
+                        {sale.receivedBy?.name && <span className="text-slate-500"> → <b className="text-slate-700">{sale.receivedBy.name}</b></span>}
+                      </div>
+                      <PaymentBadge status={sale.paymentStatus} onClick={() => togglePayment(g)} />
+                    </td>
 
-                  {/* Supplier payment */}
-                  <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                    <SupplierPayBadge
-                      status={sale.supplierPaymentStatus}
-                      onClick={() =>
-                        onSetSupplierPayment([sale.id], sale.supplierPaymentStatus === 'PAID' ? 'PENDING' : 'PAID')
-                      }
-                    />
-                  </td>
+                    {/* Supplier payment */}
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <GroupSupplierBadge g={g} onClick={() => toggleSupplier(g)} />
+                    </td>
 
-                  {/* Date */}
-                  <td className="px-4 py-3.5 font-mono text-slate-500 text-[11px]">
-                    {new Date(sale.createdAt).toLocaleDateString()}
-                  </td>
+                    {/* Date */}
+                    <td className="px-4 py-3.5 font-mono text-slate-500 text-[11px]">
+                      {new Date(sale.createdAt).toLocaleDateString()}
+                    </td>
 
-                  {/* Action Buttons */}
-                  <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => onSelectOrder(sale)}
-                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
-                    >
-                      View Details
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    {/* Action Buttons */}
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onEditOrder(g.items)}
+                        className="px-3 py-1 mr-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-lg text-xs font-semibold transition"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => onSelectOrder(sale)}
+                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Sparkles, Package, Truck, Fuel, Receipt, ChevronDown, ChevronUp, Check, Recycle, Plus } from 'lucide-react'
+import { X, Sparkles, Package, Truck, Fuel, Receipt, ChevronDown, ChevronUp, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
+import type { Sale } from '../OrderList'
 
 interface ReturnedItem {
   id: string
@@ -18,17 +19,45 @@ interface QuickOrderFormProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  // When set, the form edits this saved order (its products) instead of creating a new one
+  editItems?: Sale[] | null
 }
 
 const RETURNED_SOURCE = '__returned__'
 const OTHER_SOURCE = '__other__'
 
-const emptyForm = {
+// One product in the order (a parcel can hold several)
+interface ItemDraft {
+  key: string
+  id?: string // saved product row (edit mode)
+  // edit mode: what was saved, to warn before changing a product whose supplier is already paid
+  saved?: { costPrice: number; quantity: number; source: string; supplierPaid: boolean }
+  returnedLabel?: string // edit mode: name of the returned cover this product already uses
+  categoryId: string
+  productName: string
+  // supplier id, OTHER_SOURCE (picking/creating a new one) or RETURNED_SOURCE
+  source: string
+  returnedItemId: string
+  quantity: string
+  costPrice: string
+  soldPrice: string
+  supplierPaid: boolean
+}
+
+const newItem = (): ItemDraft => ({
+  key: Math.random().toString(36).slice(2),
   categoryId: '',
   productName: '',
+  source: '',
+  returnedItemId: '',
   quantity: '1',
   costPrice: '',
   soldPrice: '',
+  supplierPaid: false,
+})
+
+// Fields shared by the whole order / parcel
+const emptyForm = {
   deliveryCharge: '',
   petrolCost: '',
   gstAmount: '',
@@ -42,7 +71,13 @@ const inputClass =
   'w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 transition'
 const labelClass = 'block text-xs font-semibold text-slate-700 mb-1'
 
-export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrderFormProps) {
+export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }: QuickOrderFormProps) {
+  const isEdit = Boolean(editItems && editItems.length)
+  const lead = isEdit ? editItems![0] : null
+  // Returned order: money is settled, only names / categories / customer / sources can change
+  const moneyLocked = lead?.status === 'RETURNED'
+  // Payment already received: the actual amount is changed with "Edit amount" in order details
+  const payoutLocked = lead?.paymentStatus === 'RECEIVED'
   const [categories, setCategories] = useState<SelectOption[]>([])
   const [suppliers, setSuppliers] = useState<SelectOption[]>([])
   const [paymentSources, setPaymentSources] = useState<(SelectOption & { lastReceivedById?: string | null })[]>([])
@@ -57,10 +92,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
   const [returnedItems, setReturnedItems] = useState<ReturnedItem[]>([])
 
   const [form, setForm] = useState(emptyForm)
-  // supplier id, OTHER_SOURCE (picking/creating a new one) or RETURNED_SOURCE
-  const [source, setSource] = useState<string>('')
-  const [returnedItemId, setReturnedItemId] = useState('')
-  const [supplierPaid, setSupplierPaid] = useState(false)
+  const [items, setItems] = useState<ItemDraft[]>([newItem()])
   const [showCustomer, setShowCustomer] = useState(false)
 
   const [isLoadingCityFee, setIsLoadingCityFee] = useState(false)
@@ -77,21 +109,78 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
       fetch('/api/order-sources').then((r) => r.json()),
       fetch('/api/people').then((r) => r.json()),
     ])
-      .then(([cats, sups, items, srcs, orderSrcs, ppl]) => {
+      .then(([cats, sups, rItems, srcs, orderSrcs, ppl]) => {
         if (Array.isArray(ppl)) setPeople(ppl)
         if (Array.isArray(orderSrcs)) setOrderSources(orderSrcs)
         if (Array.isArray(srcs)) setPaymentSources(srcs)
         if (Array.isArray(cats)) setCategories(cats)
         if (Array.isArray(sups)) setSuppliers(sups)
-        if (Array.isArray(items)) setReturnedItems(items)
+        if (Array.isArray(rItems)) setReturnedItems(rItems)
       })
       .catch(console.error)
   }, [isOpen])
 
+  // Edit mode: fill the form from the saved order
+  useEffect(() => {
+    if (!isOpen || !editItems || editItems.length === 0) return
+    const first = editItems[0]
+    const sum = (f: (s: Sale) => number) => Math.round(editItems.reduce((a, s) => a + f(s), 0) * 100) / 100
+    const hasPayoutEdit = editItems.some((s) => s.receivedAmount != null)
+    setForm({
+      deliveryCharge: String(sum((s) => s.deliveryCharge) || ''),
+      petrolCost: String(sum((s) => s.petrolCost || 0) || ''),
+      gstAmount: String(sum((s) => s.gstAmount || 0) || ''),
+      expectedAmount: hasPayoutEdit ? String(sum((s) => s.receivedAmount ?? s.soldPrice * s.quantity)) : '',
+      customerName: first.customerName === 'Walk-in' ? '' : first.customerName,
+      city: first.city === 'General' ? '' : first.city,
+      address: first.address || '',
+    })
+    setItems(
+      editItems.map((s) => {
+        const source = s.returnedItemId ? RETURNED_SOURCE : s.supplier?.id || ''
+        const supplierPaid = s.supplierPaymentStatus === 'PAID'
+        return {
+          key: s.id,
+          id: s.id,
+          categoryId: s.category?.id || '',
+          productName: s.productName,
+          source,
+          returnedItemId: s.returnedItemId || '',
+          returnedLabel: s.returnedItemId ? s.productName : undefined,
+          quantity: String(s.quantity),
+          costPrice: String(s.costPrice),
+          soldPrice: String(s.soldPrice),
+          supplierPaid,
+          saved: { costPrice: s.costPrice, quantity: s.quantity, source, supplierPaid },
+        }
+      })
+    )
+    setOrderSourceId(first.orderSource?.id || '')
+    setPaymentSourceId(first.paymentSource?.id || '')
+    setReceivedById(first.receivedBy?.id || '')
+    setShowCustomer(first.customerName !== 'Walk-in' || first.city !== 'General' || Boolean(first.address))
+    setError(null)
+  }, [isOpen, editItems])
+
+  const handleClose = () => {
+    if (isEdit) resetForm() // a later "New Order" starts empty
+    onClose()
+  }
+
+  // Picking a different supplier means a new purchase: its payment starts as Pending
+  const chooseSupplier = (key: string, source: string) =>
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, source, supplierPaid: it.source === source ? it.supplierPaid : false } : it)))
+
   const set = (key: keyof typeof emptyForm, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const createCategory = async (name: string) => {
+  const setItem = (key: string, patch: Partial<ItemDraft>) =>
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)))
+
+  const addItem = () => setItems((prev) => [...prev, newItem()])
+  const removeItem = (key: string) => setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.key !== key) : prev))
+
+  const createCategoryFor = (itemKey: string) => async (name: string) => {
     const res = await fetch('/api/categories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -105,11 +194,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
     setCategories((prev) =>
       prev.some((c) => c.id === data.id) ? prev : [...prev, data].sort((a, b) => a.name.localeCompare(b.name))
     )
+    setItem(itemKey, { categoryId: data.id })
     toast.success(`Category "${data.name}" created`)
     return data as SelectOption
   }
 
-  const createSupplier = async (name: string) => {
+  const createSupplierFor = (itemKey: string) => async (name: string) => {
     const res = await fetch('/api/suppliers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -123,7 +213,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
     setSuppliers((prev) =>
       prev.some((s) => s.id === data.id) ? prev : [...prev, data].sort((a, b) => a.name.localeCompare(b.name))
     )
-    setSource(data.id)
+    setItem(itemKey, { source: data.id })
     return data as SelectOption
   }
 
@@ -201,18 +291,24 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
     return data as SelectOption
   }
 
-  const handlePickReturnedItem = (id: string) => {
-    setReturnedItemId(id)
-    const item = returnedItems.find((i) => i.id === id)
-    if (item) {
-      setForm((prev) => ({
-        ...prev,
-        productName: item.productName,
-        categoryId: item.categoryId || prev.categoryId,
-        costPrice: item.costPrice.toString(),
-        quantity: item.quantity.toString(),
-      }))
-    }
+  const handlePickReturnedItem = (itemKey: string, id: string) => {
+    const rItem = returnedItems.find((i) => i.id === id)
+    setItems((prev) =>
+      prev.map((it) =>
+        it.key !== itemKey
+          ? it
+          : rItem
+          ? {
+              ...it,
+              returnedItemId: id,
+              productName: rItem.productName,
+              categoryId: rItem.categoryId || it.categoryId,
+              costPrice: rItem.costPrice.toString(),
+              quantity: rItem.quantity.toString(),
+            }
+          : { ...it, returnedItemId: id }
+      )
+    )
   }
 
   const handleCityChange = async (cityName: string) => {
@@ -235,9 +331,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
 
   const resetForm = () => {
     setForm(emptyForm)
-    setSource('')
-    setReturnedItemId('')
-    setSupplierPaid(false)
+    setItems([newItem()])
     setPaymentSourceId('')
     setOrderSourceId('')
     setReceivedById('')
@@ -249,39 +343,67 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
     e.preventDefault()
     setError(null)
 
-    if (!form.productName.trim() || !form.costPrice || !form.soldPrice) {
-      setError('Product name, buy price and sale price are required.')
-      return
-    }
-    if (source === RETURNED_SOURCE && !returnedItemId) {
-      setError('Select an item from returned stock.')
-      return
+    for (const [i, it] of items.entries()) {
+      const label = items.length > 1 ? `Product ${i + 1}: ` : ''
+      if (!it.productName.trim() || !it.costPrice || !it.soldPrice) {
+        setError(`${label}product name, buy price and sale price are required.`)
+        return
+      }
+      if (it.source === RETURNED_SOURCE && !it.returnedItemId) {
+        setError(`${label}select an item from returned stock.`)
+        return
+      }
     }
 
-    const isReturned = source === RETURNED_SOURCE
-    const supplierId = !isReturned && source !== OTHER_SOURCE ? source : ''
+    if (isEdit && !moneyLocked) {
+      const touchedPaid = items.filter(
+        (it) =>
+          it.saved?.supplierPaid &&
+          (parseFloat(it.costPrice) !== it.saved.costPrice ||
+            (parseInt(it.quantity, 10) || 1) !== it.saved.quantity ||
+            it.source !== it.saved.source)
+      )
+      if (
+        touchedPaid.length &&
+        !confirm(
+          `${touchedPaid.map((it) => it.productName).join(', ')}: the supplier is already paid. Changing its cost, quantity or supplier will change the supplier account. Save anyway?`
+        )
+      ) {
+        return
+      }
+    }
 
     setIsSubmitting(true)
     try {
-      const res = await fetch('/api/sales', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/sales/${lead!.id}/edit` : '/api/sales', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          supplierId: supplierId || null,
-          returnedItemId: isReturned ? returnedItemId : null,
-          supplierPaymentStatus: supplierPaid ? 'PAID' : 'PENDING',
+          items: items.map((it) => {
+            const isReturned = it.source === RETURNED_SOURCE
+            return {
+              id: it.id,
+              productName: it.productName,
+              categoryId: it.categoryId || null,
+              quantity: it.quantity,
+              costPrice: it.costPrice,
+              soldPrice: it.soldPrice,
+              supplierId: !isReturned && it.source && it.source !== OTHER_SOURCE ? it.source : null,
+              returnedItemId: isReturned ? it.returnedItemId : null,
+              supplierPaymentStatus: it.supplierPaid ? 'PAID' : 'PENDING',
+            }
+          }),
           paymentSourceId: paymentSourceId && paymentSourceId !== OTHER_SOURCE ? paymentSourceId : null,
           orderSourceId: orderSourceId && orderSourceId !== OTHER_SOURCE ? orderSourceId : null,
           receivedById: receivedById && receivedById !== OTHER_SOURCE ? receivedById : null,
           expectedAmount: form.expectedAmount || null,
-          categoryId: form.categoryId || null,
         }),
       })
 
       if (!res.ok) {
         const errData = await res.json()
-        throw new Error(errData.error || 'Failed to create order')
+        throw new Error(errData.error || (isEdit ? 'Failed to save changes' : 'Failed to create order'))
       }
 
       onSuccess()
@@ -296,21 +418,23 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
 
   if (!isOpen) return null
 
-  // Live profit summary
-  const qty = parseInt(form.quantity, 10) || 1
-  const cost = parseFloat(form.costPrice) || 0
-  const sold = parseFloat(form.soldPrice) || 0
+  // Live profit summary for the whole order
+  const lineTotals = items.map((it) => {
+    const qty = parseInt(it.quantity, 10) || 1
+    return { sale: (parseFloat(it.soldPrice) || 0) * qty, cost: (parseFloat(it.costPrice) || 0) * qty }
+  })
+  const saleTotal = lineTotals.reduce((a, l) => a + l.sale, 0)
+  const costTotal = lineTotals.reduce((a, l) => a + l.cost, 0)
   const dc = parseFloat(form.deliveryCharge) || 0
   const petrol = parseFloat(form.petrolCost) || 0
   const gst = parseFloat(form.gstAmount) || 0
-  const saleTotal = sold * qty
-  const costTotal = cost * qty
   // What will actually reach the account (blank = full sale); the difference is a tax / fee cut
   const expected = form.expectedAmount !== '' && !isNaN(parseFloat(form.expectedAmount)) ? parseFloat(form.expectedAmount) : saleTotal
   const payoutCut = saleTotal - expected
   const profit = expected - costTotal - dc - petrol - gst
   const margin = saleTotal > 0 ? ((profit / saleTotal) * 100).toFixed(1) : '0.0'
   const formatPKR = (n: number) => `Rs. ${n.toLocaleString()}`
+  const isParcel = items.length > 1
 
   const chipClass = (active: boolean) =>
     `px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 ${
@@ -326,15 +450,17 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-              <Sparkles className="h-5 w-5" />
+            <div className={`p-2 rounded-xl ${isEdit ? 'bg-blue-500/10 text-blue-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
+              {isEdit ? <Pencil className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold">New Order</h2>
-              <p className="text-xs text-slate-500">Quick entry: buy, sell, expenses</p>
+              <h2 className="text-base font-bold">{isEdit ? 'Edit Order' : 'New Order'}</h2>
+              <p className="text-xs text-slate-500">
+                {isParcel ? `${items.length} products in one parcel` : isEdit ? 'Change anything and save' : 'Quick entry: buy, sell, expenses'}
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-500 hover:text-slate-900 transition">
+          <button onClick={handleClose} className="p-1 rounded-lg text-slate-500 hover:text-slate-900 transition">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -342,6 +468,13 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
         <form onSubmit={handleSubmit} className="px-4 pt-4 sm:px-5 sm:pt-5 space-y-4 overflow-y-auto">
           {error && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">{error}</div>
+          )}
+
+          {moneyLocked && (
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-start gap-2">
+              <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>This order is returned. You can change product names, categories, customer and sources. Prices, suppliers and expenses are locked.</span>
+            </div>
           )}
 
           {/* Where the order came from */}
@@ -382,122 +515,195 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
             )}
           </div>
 
-          {/* Category */}
-          <div>
-            <label className={labelClass}>Category</label>
-            <CreatableSelect
-              options={categories}
-              value={form.categoryId}
-              onChange={(id) => set('categoryId', id)}
-              onCreate={createCategory}
-              placeholder="Select category (e.g. Car Top Cover)"
-              createLabel="Create category"
-            />
-          </div>
+          {/* Products */}
+          <div className="space-y-3">
+            {items.map((it, idx) => {
+              // A returned cover can only go into one product line
+              const takenElsewhere = new Set(items.filter((o) => o.key !== it.key).map((o) => o.returnedItemId).filter(Boolean))
+              const availableReturned = returnedItems.filter((r) => !takenElsewhere.has(r.id))
+              const line = lineTotals[idx]
+              return (
+                <div key={it.key} className={`space-y-3 ${isParcel ? 'rounded-xl border border-slate-200 p-3' : ''}`}>
+                  {isParcel && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">
+                        Product {idx + 1}
+                        {line.sale > 0 && <span className="font-normal text-slate-500"> · {formatPKR(line.sale)}</span>}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={moneyLocked}
+                        onClick={() => removeItem(it.key)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                        title="Remove product"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
 
-          {/* Product name */}
-          <div>
-            <label className={labelClass}>Product / Cover *</label>
-            <div className="relative">
-              <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-              <input
-                type="text"
-                value={form.productName}
-                onChange={(e) => set('productName', e.target.value)}
-                placeholder="e.g. Corolla 2018 top cover"
-                className={`${inputClass} pl-9`}
-              />
-            </div>
-          </div>
+                  {/* Category */}
+                  <div>
+                    <label className={labelClass}>Category</label>
+                    <CreatableSelect
+                      options={categories}
+                      value={it.categoryId}
+                      onChange={(id) => setItem(it.key, { categoryId: id })}
+                      onCreate={createCategoryFor(it.key)}
+                      placeholder="Select category (e.g. Car Top Cover)"
+                      createLabel="Create category"
+                    />
+                  </div>
 
-          {/* Supplier / source */}
-          <div>
-            <label className={labelClass}>Bought from</label>
-            <div className="flex flex-wrap gap-1.5">
-              {suppliers.map((s) => (
-                <button key={s.id} type="button" onClick={() => setSource(s.id)} className={chipClass(source === s.id)}>
-                  {source === s.id && <Check className="h-3.5 w-3.5" />}
-                  {s.name}
-                </button>
-              ))}
-              <button type="button" onClick={() => setSource(OTHER_SOURCE)} className={chipClass(source === OTHER_SOURCE)}>
-                <Plus className="h-3.5 w-3.5" /> Other
-              </button>
-              {returnedItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSource(RETURNED_SOURCE)}
-                  className={chipClass(source === RETURNED_SOURCE)}
-                >
-                  <Recycle className="h-3.5 w-3.5" /> Returned stock ({returnedItems.length})
-                </button>
-              )}
-            </div>
+                  {/* Product name */}
+                  <div>
+                    <label className={labelClass}>Product / Cover *</label>
+                    <div className="relative">
+                      <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                      <input
+                        type="text"
+                        value={it.productName}
+                        onChange={(e) => setItem(it.key, { productName: e.target.value })}
+                        placeholder="e.g. Corolla 2018 top cover"
+                        className={`${inputClass} pl-9`}
+                      />
+                    </div>
+                  </div>
 
-            {source === OTHER_SOURCE && (
-              <div className="mt-2">
-                <CreatableSelect
-                  options={suppliers}
-                  value=""
-                  onChange={(id) => id && setSource(id)}
-                  onCreate={createSupplier}
-                  placeholder="Type supplier name"
-                  createLabel="Add supplier"
-                  autoOpen
-                />
-              </div>
+                  <fieldset disabled={moneyLocked} className="space-y-3 disabled:opacity-60">
+                  {/* Supplier / source */}
+                  <div>
+                    <label className={labelClass}>Bought from</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suppliers.map((s) => (
+                        <button key={s.id} type="button" onClick={() => chooseSupplier(it.key, s.id)} className={chipClass(it.source === s.id)}>
+                          {it.source === s.id && <Check className="h-3.5 w-3.5" />}
+                          {s.name}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => chooseSupplier(it.key, OTHER_SOURCE)} className={chipClass(it.source === OTHER_SOURCE)}>
+                        <Plus className="h-3.5 w-3.5" /> Other
+                      </button>
+                      {(availableReturned.length > 0 || it.returnedLabel) && (
+                        <button
+                          type="button"
+                          onClick={() => chooseSupplier(it.key, RETURNED_SOURCE)}
+                          className={chipClass(it.source === RETURNED_SOURCE)}
+                        >
+                          <Recycle className="h-3.5 w-3.5" /> Returned stock ({availableReturned.length})
+                        </button>
+                      )}
+                    </div>
+
+                    {it.source === OTHER_SOURCE && (
+                      <div className="mt-2">
+                        <CreatableSelect
+                          options={suppliers}
+                          value=""
+                          onChange={(id) => id && chooseSupplier(it.key, id)}
+                          onCreate={createSupplierFor(it.key)}
+                          placeholder="Type supplier name"
+                          createLabel="Add supplier"
+                          autoOpen
+                        />
+                      </div>
+                    )}
+
+                    {it.source === RETURNED_SOURCE && (
+                      <select
+                        value={it.returnedItemId}
+                        onChange={(e) => handlePickReturnedItem(it.key, e.target.value)}
+                        className={`${inputClass} mt-2`}
+                      >
+                        <option value="">-- Select returned item --</option>
+                        {it.returnedLabel && it.returnedItemId && !availableReturned.some((r) => r.id === it.returnedItemId) && (
+                          <option value={it.returnedItemId}>{it.returnedLabel} (current)</option>
+                        )}
+                        {availableReturned.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.productName} x{r.quantity} — cost Rs. {r.costPrice} ({new Date(r.createdAt).toLocaleDateString()})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Pricing */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelClass}>Qty</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={it.quantity}
+                        onChange={(e) => setItem(it.key, { quantity: e.target.value })}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Buy price *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={it.costPrice}
+                        onChange={(e) => setItem(it.key, { costPrice: e.target.value })}
+                        placeholder="1200"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Sale price *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={it.soldPrice}
+                        onChange={(e) => setItem(it.key, { soldPrice: e.target.value })}
+                        placeholder="2200"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Supplier payment for this product */}
+                  {it.source !== RETURNED_SOURCE && (
+                    <div className="flex items-center justify-between bg-slate-100/50 border border-slate-300/60 rounded-xl px-3 py-2">
+                      <span className="text-xs font-semibold text-slate-700">Supplier payment</span>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setItem(it.key, { supplierPaid: false })}
+                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                            !it.supplierPaid ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          Pending
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setItem(it.key, { supplierPaid: true })}
+                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                            it.supplierPaid ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          Paid
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </fieldset>
+                </div>
+              )
+            })}
+
+            {!moneyLocked && (
+            <button
+              type="button"
+              onClick={addItem}
+              className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 flex items-center justify-center gap-1.5 transition"
+            >
+              <Plus className="h-4 w-4" /> Add another product
+            </button>
             )}
-
-            {source === RETURNED_SOURCE && (
-              <select
-                value={returnedItemId}
-                onChange={(e) => handlePickReturnedItem(e.target.value)}
-                className={`${inputClass} mt-2`}
-              >
-                <option value="">-- Select returned item --</option>
-                {returnedItems.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.productName} x{i.quantity} — cost Rs. {i.costPrice} ({new Date(i.createdAt).toLocaleDateString()})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {/* Pricing */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className={labelClass}>Qty</label>
-              <input
-                type="number"
-                min="1"
-                value={form.quantity}
-                onChange={(e) => set('quantity', e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Buy price *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.costPrice}
-                onChange={(e) => set('costPrice', e.target.value)}
-                placeholder="1200"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Sale price *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={form.soldPrice}
-                onChange={(e) => set('soldPrice', e.target.value)}
-                placeholder="2200"
-                className={inputClass}
-              />
-            </div>
           </div>
 
           {/* Who pays us for this order */}
@@ -540,18 +746,21 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
 
           {/* Expected payout (Daraz / courier may cut tax or fees) */}
           <div>
-            <label className={labelClass}>Expected to receive (Rs)</label>
+            <label className={labelClass}>Expected to receive (Rs){isParcel ? ' — whole parcel' : ''}</label>
             <input
               type="number"
               step="0.01"
               min="0"
+              disabled={moneyLocked || payoutLocked}
               value={form.expectedAmount}
               onChange={(e) => set('expectedAmount', e.target.value)}
               placeholder={saleTotal > 0 ? `${saleTotal} (same as sale)` : 'Same as sale price'}
               className={inputClass}
             />
             <p className="text-[11px] text-slate-500 mt-1">
-              Leave blank if the full sale amount will come. You can change it when the payment arrives.
+              {payoutLocked
+                ? 'Payment is already received. Change the actual amount with "Edit amount" in order details.'
+                : 'Leave blank if the full sale amount will come. You can change it when the payment arrives.'}
             </p>
           </div>
 
@@ -593,37 +802,10 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
             )}
           </div>
 
-          {/* Supplier payment */}
-          {source !== RETURNED_SOURCE && (
-            <div className="flex items-center justify-between bg-slate-100/50 border border-slate-300/60 rounded-xl px-3 py-2">
-              <span className="text-xs font-semibold text-slate-700">Supplier payment</span>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSupplierPaid(false)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
-                    !supplierPaid ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}
-                >
-                  Pending
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSupplierPaid(true)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
-                    supplierPaid ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
-                  }`}
-                >
-                  Paid
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Expenses */}
-          <div>
+          {/* Expenses (whole parcel) */}
+          <fieldset disabled={moneyLocked} className="disabled:opacity-60">
             <label className={labelClass}>
-              Expenses (Rs){' '}
+              Expenses (Rs){isParcel ? ' — whole parcel' : ''}{' '}
               {isLoadingCityFee && <span className="text-[10px] text-emerald-600 animate-pulse">(loading DC...)</span>}
             </label>
             <div className="grid grid-cols-3 gap-3">
@@ -661,7 +843,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
                 />
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* Customer (optional) */}
           <div className="border border-slate-200 rounded-xl">
@@ -703,7 +885,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
           {/* Live summary */}
           <div className="bg-slate-100/60 border border-slate-300/80 rounded-xl p-3 space-y-1.5 text-xs font-mono">
             <div className="flex justify-between">
-              <span className="text-slate-500">Sale</span>
+              <span className="text-slate-500">Sale{isParcel ? ` (${items.length} products)` : ''}</span>
               <span className="text-slate-800">{formatPKR(saleTotal)}</span>
             </div>
             <div className="flex justify-between">
@@ -736,7 +918,11 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess }: QuickOrde
               className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
             >
               <Check className="h-4 w-4" />
-              {isSubmitting ? 'Saving...' : `Save Order · Profit ${formatPKR(profit)}`}
+              {isSubmitting
+                ? 'Saving...'
+                : isEdit
+                ? `Save changes${isParcel ? ` (${items.length} items)` : ''}`
+                : `Save Order${isParcel ? ` (${items.length} items)` : ''} · Profit ${formatPKR(profit)}`}
             </button>
           </div>
         </form>

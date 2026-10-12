@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import AppShell from '@/components/ui/AppShell'
 import { NavSection } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
@@ -63,8 +63,17 @@ export default function Home() {
   const [, setIsRestockOpen] = useState(false) // OLD INVENTORY FLOW: was [isRestockOpen, setIsRestockOpen]
   const [isExpenseOpen, setIsExpenseOpen] = useState(false)
   const [selectedDrawerSale, setSelectedDrawerSale] = useState<Sale | null>(null)
+  // The open order's products, read from the latest list so the drawer never shows stale data
+  const drawerItems = useMemo(() => {
+    if (!selectedDrawerSale) return []
+    const parcelId = selectedDrawerSale.parcelId
+    const fresh = parcelId ? sales.filter((s) => s.parcelId === parcelId) : sales.filter((s) => s.id === selectedDrawerSale.id)
+    return fresh.length ? fresh : [selectedDrawerSale]
+  }, [selectedDrawerSale, sales])
   const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
   const [receiveModal, setReceiveModal] = useState<{ sale: Sale; mode: 'receive' | 'edit' } | null>(null)
+  // Products of the order being edited (null = form is for a new order)
+  const [editOrderItems, setEditOrderItems] = useState<Sale[] | null>(null)
 
   // Fetch KPI Stats
   const fetchStats = useCallback(async () => {
@@ -335,6 +344,7 @@ export default function Home() {
           onSetSupplierPayment={handleSetSupplierPayment}
           onSetCustomerPayment={handleSetCustomerPayment}
           onReceivePayment={(sale) => setReceiveModal({ sale, mode: 'receive' })}
+          onEditOrder={(items) => setEditOrderItems(items)}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
         />
       )}
@@ -385,7 +395,7 @@ export default function Home() {
 
       {/* Slide-over Order Details Drawer */}
       <OrderDetailsDrawer
-        sale={selectedDrawerSale}
+        items={drawerItems}
         isOpen={Boolean(selectedDrawerSale)}
         onClose={() => setSelectedDrawerSale(null)}
         onUpdateStatus={handleUpdateStatus}
@@ -395,6 +405,7 @@ export default function Home() {
         onSetCustomerPayment={handleSetCustomerPayment}
         onSetReceivedBy={handleSetReceivedBy}
         onReceivePayment={(sale, mode) => setReceiveModal({ sale, mode })}
+        onEditOrder={(items) => setEditOrderItems(items)}
       />
 
       <ReceivePaymentModal
@@ -406,10 +417,14 @@ export default function Home() {
 
       {/* Guided Step-by-Step Wizards & Modals */}
       <QuickOrderForm
-        isOpen={isNewDispatchOpen}
-        onClose={() => setIsNewDispatchOpen(false)}
+        isOpen={isNewDispatchOpen || Boolean(editOrderItems)}
+        editItems={editOrderItems}
+        onClose={() => {
+          setIsNewDispatchOpen(false)
+          setEditOrderItems(null)
+        }}
         onSuccess={() => {
-          toast.success('Order saved!')
+          toast.success(editOrderItems ? 'Changes saved!' : 'Order saved!')
           refreshAll()
         }}
       />

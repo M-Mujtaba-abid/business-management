@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { parseDateRange, hasBounds } from '@/lib/dateRange'
-import { payoutAmount, paymentFee } from '@/lib/saleMoney'
+import { payoutAmount, paymentFee, countOrders } from '@/lib/saleMoney'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +59,7 @@ export async function GET(request: NextRequest) {
       prisma.sale.findMany({
         where: inPeriod,
         select: {
+          id: true, parcelId: true,
           status: true, soldPrice: true, quantity: true, profit: true, receivedAmount: true,
           deliveryCharge: true, petrolCost: true, gstAmount: true,
         },
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
       prisma.expense.groupBy({ by: ['category'], where: inPeriod, _sum: { amount: true } }),
       prisma.sale.findMany({
         where: { createdAt: { gte: trendStart, lte: trendEnd } },
-        select: { createdAt: true, status: true, soldPrice: true, quantity: true, profit: true },
+        select: { id: true, parcelId: true, createdAt: true, status: true, soldPrice: true, quantity: true, profit: true },
       }),
       prisma.expense.findMany({
         where: { createdAt: { gte: trendStart, lte: trendEnd } },
@@ -85,7 +86,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { soldPrice: true, quantity: true, receivedAmount: true },
+        select: { id: true, parcelId: true, soldPrice: true, quantity: true, receivedAmount: true },
       }),
       prisma.returnedItem.count({ where: { status: 'AVAILABLE' } }),
       prisma.partner.findMany({ orderBy: { name: 'asc' } }),
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
     const paymentFees = delivered.reduce((acc, s) => acc + paymentFee(s), 0)
     // A returned order's profit is stored as -(loss), for old and new orders alike
     const returnLoss = sales.filter((s) => s.status === 'RETURNED' && s.profit < 0).reduce((acc, s) => acc - s.profit, 0)
-    const activeDispatches = sales.filter((s) => s.status === 'DISPATCHED').length
+    const activeDispatches = countOrders(sales.filter((s) => s.status === 'DISPATCHED'))
     const generalExpenses = expenses.reduce((acc, e) => acc + (e._sum.amount || 0), 0)
     const trueNetProfit = grossProfit - returnLoss - generalExpenses
 
@@ -131,10 +132,13 @@ export async function GET(request: NextRequest) {
       else cursor.setDate(cursor.getDate() + 1)
     }
     const bucketOf = (d: Date) => index.get(byMonth ? monthKey(d) : dayKey(d))
+    const seenParcels = new Set<string>()
     for (const s of trendSales) {
       const i = bucketOf(s.createdAt)
       if (i === undefined) continue
-      buckets[i].orders += 1
+      // a parcel counts as one order (only its first product adds to the count)
+      if (!s.parcelId || !seenParcels.has(s.parcelId)) buckets[i].orders += 1
+      if (s.parcelId) seenParcels.add(s.parcelId)
       if (s.status === 'DELIVERED') {
         buckets[i].sales += s.soldPrice * s.quantity
         buckets[i].orderProfit += s.profit
@@ -165,7 +169,7 @@ export async function GET(request: NextRequest) {
       trueNetProfit,
       totalExpensesCombined: generalExpenses + returnLoss,
       activeDispatches,
-      totalOrdersCount: sales.length,
+      totalOrdersCount: countOrders(sales),
       expenseBreakdown,
       trend,
       trendGranularity: byMonth ? 'month' : 'day',
@@ -173,7 +177,7 @@ export async function GET(request: NextRequest) {
       supplierPendingTotal,
       supplierOverdue,
       receivablePendingTotal: unpaidDelivered.reduce((acc, s) => acc + payoutAmount(s), 0),
-      receivablePendingCount: unpaidDelivered.length,
+      receivablePendingCount: countOrders(unpaidDelivered),
       returnedItemsCount,
       partners,
       totalSupplierDebt: suppliers.reduce((acc, sup) => acc + sup.unpaidBalance, 0),

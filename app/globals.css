@@ -18,9 +18,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* clip (not hidden) stops sideways scroll without breaking sticky headers */
 html,
 body {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Phones: 16px form text stops iOS from zooming in on focus */

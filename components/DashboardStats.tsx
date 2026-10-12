@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import { Sale, SupplierPayBadge, PaymentBadge } from './OrderList'
+import { groupSales, OrderGroup } from '@/lib/parcels'
 import { useCountUp, formatPKR } from './charts/hooks'
 import Sparkline from './charts/Sparkline'
 import MiniBars from './charts/MiniBars'
@@ -117,6 +118,10 @@ export default function DashboardStats({
 }: StatsProps) {
   const trend = stats.trend
   const hasData = Array.isArray(trend)
+
+  const recentGroups = useMemo(() => groupSales(recentSales).slice(0, 6), [recentSales])
+  const groupTitle = (g: OrderGroup) =>
+    g.items.length === 1 ? g.lead.productName : `${g.items.length} items: ${g.items.map((i) => i.productName).join(', ')}`
 
   // Chart inputs are derived once per stats change, not on every render
   const series = useMemo(() => {
@@ -326,11 +331,10 @@ export default function DashboardStats({
         <div className="grid grid-cols-1 gap-4 content-start">
           <button
             onClick={onViewSupplierPayments}
-            className={`${card} text-left p-4 sm:p-5 transition ${
-              stats.supplierOverdue
-                ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-white ring-2 ring-amber-200/60'
-                : 'border-amber-200 bg-gradient-to-br from-amber-50/60 to-white hover:border-amber-300'
-            }`}
+            className={`${card} text-left p-4 sm:p-5 transition ${stats.supplierOverdue
+              ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-white ring-2 ring-amber-200/60'
+              : 'border-amber-200 bg-gradient-to-br from-amber-50/60 to-white hover:border-amber-300'
+              }`}
           >
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -494,79 +498,79 @@ export default function DashboardStats({
           </div>
         ) : (
           <>
-          {/* Phones: compact list */}
-          <div className="md:hidden divide-y divide-slate-100">
-            {recentSales.slice(0, 6).map((sale) => (
-              <button
-                key={sale.id}
-                onClick={() => onSelectOrder(sale)}
-                className="w-full text-left py-3 flex items-start justify-between gap-3 active:bg-slate-50"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium text-sm text-slate-900 truncate">{sale.productName}</div>
-                  <div className="text-[11px] text-slate-500 truncate">
-                    {[sale.orderSource?.name, sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : null)]
-                      .filter(Boolean)
-                      .join(' · ') || '—'}
-                  </div>
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    <StatusBadge status={sale.status} />
-                    <PaymentBadge status={sale.paymentStatus} />
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-semibold text-sm text-slate-900">{formatPKR(sale.soldPrice * sale.quantity)}</div>
-                  <div className="text-[11px] text-slate-500">Profit {formatPKR(sale.profit)}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Tablet / desktop: table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Item</th>
-                  <th className="px-3 py-2 font-medium">Supplier</th>
-                  <th className="px-3 py-2 font-medium">Amount</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Payment</th>
-                  <th className="px-3 py-2 font-medium">Supplier pay</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentSales.slice(0, 6).map((sale) => (
-                  <tr key={sale.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => onSelectOrder(sale)}>
-                    <td className="px-3 py-3">
-                      <div className="font-medium text-slate-900">{sale.productName}</div>
-                      {(sale.orderSource?.name || sale.category?.name) && (
-                        <div className="text-xs text-slate-500">
-                          {[sale.orderSource?.name, sale.category?.name].filter(Boolean).join(' · ')}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-slate-600">
-                      {sale.supplier?.name || (sale.returnedItemId ? 'Returned stock' : '—')}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="font-semibold text-slate-900">{formatPKR(sale.soldPrice * sale.quantity)}</div>
-                      <div className="text-xs text-slate-500">Profit {formatPKR(sale.profit)}</div>
-                    </td>
-                    <td className="px-3 py-3">
+            {/* Phones: compact list */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {recentGroups.map(({ lead: sale, ...g }) => (
+                <button
+                  key={g.key}
+                  onClick={() => onSelectOrder(sale)}
+                  className="w-full text-left py-3 flex items-start justify-between gap-3 active:bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm text-slate-900 truncate">{groupTitle({ lead: sale, ...g })}</div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {[sale.orderSource?.name, g.supplierNames.join(', ')].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
                       <StatusBadge status={sale.status} />
-                    </td>
-                    <td className="px-3 py-3">
                       <PaymentBadge status={sale.paymentStatus} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <SupplierPayBadge status={sale.supplierPaymentStatus} />
-                    </td>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold text-sm text-slate-900">{formatPKR(g.saleTotal)}</div>
+                    <div className="text-[11px] text-slate-500">Profit {formatPKR(g.profit)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Tablet / desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Item</th>
+                    <th className="px-3 py-2 font-medium">Supplier</th>
+                    <th className="px-3 py-2 font-medium">Amount</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Payment</th>
+                    <th className="px-3 py-2 font-medium">Supplier pay</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recentGroups.map(({ lead: sale, ...g }) => (
+                    <tr key={g.key} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => onSelectOrder(sale)}>
+                      <td className="px-3 py-3 max-w-[260px]">
+                        <div className="font-medium text-slate-900 truncate">{groupTitle({ lead: sale, ...g })}</div>
+                        {(sale.orderSource?.name || (g.items.length === 1 && sale.category?.name)) && (
+                          <div className="text-xs text-slate-500">
+                            {[sale.orderSource?.name, g.items.length === 1 ? sale.category?.name : null].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-slate-600">
+                        {g.supplierNames.join(', ') || '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="font-semibold text-slate-900">{formatPKR(g.saleTotal)}</div>
+                        <div className="text-xs text-slate-500">Profit {formatPKR(g.profit)}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusBadge status={sale.status} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <PaymentBadge status={sale.paymentStatus} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SupplierPayBadge
+                          status={g.supplierTracked === 0 ? 'NOT_APPLICABLE' : g.supplierPending > 0 ? 'PENDING' : 'PAID'}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>

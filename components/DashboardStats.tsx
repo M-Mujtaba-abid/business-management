@@ -121,7 +121,8 @@ export default function DashboardStats({
 
   const recentGroups = useMemo(() => groupSales(recentSales).slice(0, 6), [recentSales])
   const groupTitle = (g: OrderGroup) =>
-    g.items.length === 1 ? g.lead.productName : `${g.items.length} items: ${g.items.map((i) => i.productName).join(', ')}`
+    (g.lead.orderNo ? `#${g.lead.orderNo} · ` : '') +
+    (g.items.length === 1 ? g.lead.productName : `${g.items.length} items: ${g.items.map((i) => i.productName).join(', ')}`)
 
   // Chart inputs are derived once per stats change, not on every render
   const series = useMemo(() => {

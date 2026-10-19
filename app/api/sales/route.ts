@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
 import { splitByWeight } from '@/lib/saleMoney'
+import { cleanRef, nextOrderNo, findDuplicateRef } from '@/lib/orderRefs'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +42,11 @@ export async function GET(request: NextRequest) {
     if (paymentStatus === 'NOT_RECEIVED' || paymentStatus === 'RECEIVED') {
       where.paymentStatus = paymentStatus as CustomerPayment
     }
+    // Orders with neither a Daraz / Website order ID nor a tracking number yet
+    if (searchParams.get('missingRef') === '1') {
+      where.externalOrderId = null
+      where.trackingNumber = null
+    }
 
     if (search) {
       where.OR = [
@@ -53,7 +59,12 @@ export async function GET(request: NextRequest) {
         { paymentSource: { name: { contains: search, mode: 'insensitive' } } },
         { orderSource: { name: { contains: search, mode: 'insensitive' } } },
         { receivedBy: { name: { contains: search, mode: 'insensitive' } } },
+        { externalOrderId: { contains: search.replace(/^#/, ''), mode: 'insensitive' } },
+        { trackingNumber: { contains: search.replace(/^#/, ''), mode: 'insensitive' } },
       ]
+      // "1045" or "#1045" also finds our own order number
+      const asNumber = /^#?\d+$/.test(search.trim()) ? parseInt(search.trim().replace('#', ''), 10) : NaN
+      if (!isNaN(asNumber)) where.OR.push({ orderNo: asNumber })
     }
 
     const startDate = searchParams.get('startDate')
@@ -156,14 +167,26 @@ export async function POST(request: NextRequest) {
       orderSourceId,
       receivedById,
       expectedAmount,
+      allowDuplicate,
     } = body
+    const externalOrderId = cleanRef(body.externalOrderId)
+    const trackingNumber = cleanRef(body.trackingNumber)
+
+    // Same order ID / tracking already saved: ask before saving it twice
+    if (!allowDuplicate) {
+      const duplicate = await findDuplicateRef(prisma, { externalOrderId, trackingNumber })
+      if (duplicate) return NextResponse.json({ error: duplicate, duplicate: true }, { status: 409 })
+    }
 
     const rawItems: ItemInput[] = Array.isArray(body.items) && body.items.length > 0 ? body.items : [body]
 
-    // Customer details are optional in the quick order flow
-    const customer = (customerName || '').trim() || 'Walk-in'
+    // Customer details are required on every order
+    const customer = (customerName || '').trim()
     const addr = (address || '').trim()
-    const cityName = (city || '').trim() || 'General'
+    const cityName = (city || '').trim()
+    if (!customer || !cityName || !addr) {
+      return NextResponse.json({ error: 'Customer name, city and address are required.' }, { status: 400 })
+    }
 
     const items: {
       productId: string | null
@@ -222,6 +245,9 @@ export async function POST(request: NextRequest) {
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      // One number for the whole order / parcel
+      const orderNo = await nextOrderNo(tx)
+
       // A cover taken from returned stock was already paid for on its original order
       for (const id of returnedIds) {
         const item = await tx.returnedItem.findUnique({ where: { id } })
@@ -260,6 +286,9 @@ export async function POST(request: NextRequest) {
             receivedAmount: payout !== null && Math.abs(payout - saleTotal) >= 0.005 ? payout : null,
             receivedById: receivedById || null,
             parcelId,
+            orderNo,
+            externalOrderId,
+            trackingNumber,
             paymentStatus: 'NOT_RECEIVED',
             profit: 0,
             status: 'DISPATCHED',

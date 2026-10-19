@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
+import CopyRef from './ui/CopyRef'
 import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
@@ -37,6 +38,9 @@ export interface Sale {
   paymentReceivedAt?: string | null
   receivedAmount?: number | null
   parcelId?: string | null
+  orderNo?: number | null
+  externalOrderId?: string | null
+  trackingNumber?: string | null
   paymentSource?: { id: string; name: string } | null
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
@@ -44,6 +48,7 @@ export interface Sale {
 
 export interface OrderFilters {
   receivedById: string // '' | person id | 'none'
+  missingRef: string // '' | '1' (no order ID and no tracking yet)
   orderSourceId: string // '' | source id | 'none'
   categoryId: string
   supplierId: string
@@ -55,6 +60,7 @@ export interface OrderFilters {
 
 export const EMPTY_ORDER_FILTERS: OrderFilters = {
   receivedById: '',
+  missingRef: '',
   orderSourceId: '',
   categoryId: '',
   supplierId: '',
@@ -336,7 +342,7 @@ export default function OrderList({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search customer, city, item, supplier..."
+              placeholder="Search #, order ID, tracking, item..."
               className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 sm:py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 transition"
             />
           </div>
@@ -454,6 +460,17 @@ export default function OrderList({
           Supplier pending 15+ days
         </button>
 
+        <button
+          onClick={() => setFilters({ ...filters, missingRef: filters.missingRef ? '' : '1' })}
+          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+            filters.missingRef
+              ? 'bg-blue-500/15 text-blue-700 border-blue-500/40'
+              : 'bg-slate-100/80 text-slate-500 border-slate-300/80 hover:text-slate-800'
+          }`}
+        >
+          Missing tracking / ID
+        </button>
+
         {hasFilters && (
           <button
             onClick={() => setFilters(EMPTY_ORDER_FILTERS)}
@@ -545,12 +562,21 @@ export default function OrderList({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        {g.items.length > 1 && (
-                          <span className="inline-block mb-0.5 px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold">
-                            {g.items.length} items
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1 mb-0.5">
+                          {sale.orderNo && <span className="text-[11px] font-bold text-slate-500 font-mono">#{sale.orderNo}</span>}
+                          {g.items.length > 1 && (
+                            <span className="inline-block px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold">
+                              {g.items.length} items
+                            </span>
+                          )}
+                        </div>
                         <div className="font-semibold text-sm text-slate-900 break-words">{groupTitle(g)}</div>
+                        {(sale.externalOrderId || sale.trackingNumber) && (
+                          <div className="flex flex-wrap gap-x-2 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                            {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
+                            {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} />}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <div className="text-sm font-bold text-emerald-600 font-mono">{formatPKR(g.saleTotal)}</div>
@@ -654,6 +680,7 @@ export default function OrderList({
                     {/* Order Item(s) */}
                     <td className="px-4 py-3.5 max-w-[280px]">
                       <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                        {sale.orderNo && <span className="text-[11px] font-bold text-slate-500 font-mono shrink-0">#{sale.orderNo}</span>}
                         {g.items.length > 1 && (
                           <span className="px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold shrink-0">
                             {g.items.length} items
@@ -661,6 +688,12 @@ export default function OrderList({
                         )}
                         <span className="truncate">{groupTitle(g)}</span>
                       </div>
+                      {(sale.externalOrderId || sale.trackingNumber) && (
+                        <div className="flex flex-wrap gap-x-2 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                          {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
+                          {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} />}
+                        </div>
+                      )}
                       <div className="text-[11px] text-slate-500">
                         {sale.orderSource?.name && (
                           <span className="inline-block mr-1 px-1.5 py-px rounded bg-violet-50 text-violet-700 border border-violet-100 font-semibold">

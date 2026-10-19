@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Sparkles, Package, Truck, Fuel, Receipt, ChevronDown, ChevronUp, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
+import { X, Sparkles, Package, Truck, Fuel, Receipt, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
@@ -65,6 +65,8 @@ const emptyForm = {
   customerName: '',
   city: '',
   address: '',
+  externalOrderId: '', // Daraz / Website order ID
+  trackingNumber: '', // courier (Leopards...) tracking number
 }
 
 const inputClass =
@@ -93,7 +95,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
 
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
-  const [showCustomer, setShowCustomer] = useState(false)
+  const [showOrderIdField, setShowOrderIdField] = useState(false)
 
   const [isLoadingCityFee, setIsLoadingCityFee] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -134,6 +136,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       customerName: first.customerName === 'Walk-in' ? '' : first.customerName,
       city: first.city === 'General' ? '' : first.city,
       address: first.address || '',
+      externalOrderId: first.externalOrderId || '',
+      trackingNumber: first.trackingNumber || '',
     })
     setItems(
       editItems.map((s) => {
@@ -158,7 +162,6 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setOrderSourceId(first.orderSource?.id || '')
     setPaymentSourceId(first.paymentSource?.id || '')
     setReceivedById(first.receivedBy?.id || '')
-    setShowCustomer(first.customerName !== 'Walk-in' || first.city !== 'General' || Boolean(first.address))
     setError(null)
   }, [isOpen, editItems])
 
@@ -335,13 +338,18 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setPaymentSourceId('')
     setOrderSourceId('')
     setReceivedById('')
-    setShowCustomer(false)
+    setShowOrderIdField(false)
     setError(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (!form.customerName.trim() || !form.city.trim() || !form.address.trim()) {
+      setError('Customer name, city and address are required.')
+      return
+    }
 
     for (const [i, it] of items.entries()) {
       const label = items.length > 1 ? `Product ${i + 1}: ` : ''
@@ -375,11 +383,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
 
     setIsSubmitting(true)
     try {
-      const res = await fetch(isEdit ? `/api/sales/${lead!.id}/edit` : '/api/sales', {
+      const send = (allowDuplicate: boolean) => fetch(isEdit ? `/api/sales/${lead!.id}/edit` : '/api/sales', {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          allowDuplicate,
           items: items.map((it) => {
             const isReturned = it.source === RETURNED_SOURCE
             return {
@@ -400,6 +409,14 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           expectedAmount: form.expectedAmount || null,
         }),
       })
+
+      let res = await send(false)
+      // Same order ID / tracking already saved on another order: ask before saving it twice
+      if (res.status === 409) {
+        const dup = await res.json()
+        if (!confirm(`${dup.error}\n\nSave anyway?`)) return
+        res = await send(true)
+      }
 
       if (!res.ok) {
         const errData = await res.json()
@@ -436,6 +453,13 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const formatPKR = (n: number) => `Rs. ${n.toLocaleString()}`
   const isParcel = items.length > 1
 
+  // Field labels follow where the order came from / who delivers it
+  const orderSourceName = (orderSources.find((o) => o.id === orderSourceId)?.name || '').toLowerCase()
+  const orderIdLabel =
+    orderSourceName === 'daraz' ? 'Daraz Order ID' : orderSourceName === 'website' ? 'Website Order #' : ''
+  const paymentSourceName = (paymentSources.find((p) => p.id === paymentSourceId)?.name || '').toLowerCase()
+  const trackingLabel = paymentSourceName === 'leopards' ? 'Leopards tracking number' : 'Courier tracking number'
+
   const chipClass = (active: boolean) =>
     `px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 ${
       active
@@ -445,7 +469,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl text-slate-900 flex flex-col max-h-[94dvh] sm:max-h-[92vh]">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full max-w-lg lg:max-w-5xl xl:max-w-6xl shadow-2xl text-slate-900 flex flex-col max-h-[94dvh] sm:max-h-[92vh] lg:h-[90vh] overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-200">
@@ -454,7 +478,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
               {isEdit ? <Pencil className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold">{isEdit ? 'Edit Order' : 'New Order'}</h2>
+              <h2 className="text-base font-bold">{isEdit ? `Edit Order${lead?.orderNo ? ` #${lead.orderNo}` : ''}` : 'New Order'}</h2>
               <p className="text-xs text-slate-500">
                 {isParcel ? `${items.length} products in one parcel` : isEdit ? 'Change anything and save' : 'Quick entry: buy, sell, expenses'}
               </p>
@@ -465,453 +489,493 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-4 pt-4 sm:px-5 sm:pt-5 space-y-4 overflow-y-auto">
-          {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">{error}</div>
-          )}
+        {/* Phones: one scrolling column. Laptops: products on the left, money + save on the right, each scrolling on its own */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[minmax(0,1fr)_auto]"
+        >
+          {/* Left: what was sold and to whom */}
+          <div className="px-4 pt-4 sm:px-5 sm:pt-5 lg:p-6 space-y-4 lg:row-span-2 lg:overflow-y-auto">
+            {error && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs rounded-xl">{error}</div>
+            )}
 
-          {moneyLocked && (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-start gap-2">
-              <Lock className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>This order is returned. You can change product names, categories, customer and sources. Prices, suppliers and expenses are locked.</span>
-            </div>
-          )}
-
-          {/* Where the order came from */}
-          <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
-            <label className={labelClass}>Order from</label>
-            <div className="flex flex-wrap gap-1.5">
-              {orderSources.map((src) => (
-                <button
-                  key={src.id}
-                  type="button"
-                  onClick={() => handlePickOrderSource(src.id)}
-                  className={chipClass(orderSourceId === src.id)}
-                >
-                  {orderSourceId === src.id && <Check className="h-3.5 w-3.5" />}
-                  {src.name}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setOrderSourceId(OTHER_SOURCE)}
-                className={chipClass(orderSourceId === OTHER_SOURCE)}
-              >
-                <Plus className="h-3.5 w-3.5" /> Other
-              </button>
-            </div>
-            {orderSourceId === OTHER_SOURCE && (
-              <div className="mt-2">
-                <CreatableSelect
-                  options={orderSources}
-                  value=""
-                  onChange={(id) => id && setOrderSourceId(id)}
-                  onCreate={createOrderSource}
-                  placeholder="Type name (e.g. Instagram, WhatsApp)"
-                  createLabel="Add"
-                  autoOpen
-                />
+            {moneyLocked && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-start gap-2">
+                <Lock className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>This order is returned. You can change product names, categories, customer and sources. Prices, suppliers and expenses are locked.</span>
               </div>
             )}
-          </div>
 
-          {/* Products */}
-          <div className="space-y-3">
-            {items.map((it, idx) => {
-              // A returned cover can only go into one product line
-              const takenElsewhere = new Set(items.filter((o) => o.key !== it.key).map((o) => o.returnedItemId).filter(Boolean))
-              const availableReturned = returnedItems.filter((r) => !takenElsewhere.has(r.id))
-              const line = lineTotals[idx]
-              return (
-                <div key={it.key} className={`space-y-3 ${isParcel ? 'rounded-xl border border-slate-200 p-3' : ''}`}>
-                  {isParcel && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700">
-                        Product {idx + 1}
-                        {line.sale > 0 && <span className="font-normal text-slate-500"> · {formatPKR(line.sale)}</span>}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={moneyLocked}
-                        onClick={() => removeItem(it.key)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                        title="Remove product"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
+            {/* Where the order came from */}
+            <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
+              <label className={labelClass}>Order from</label>
+              <div className="flex flex-wrap gap-1.5">
+                {orderSources.map((src) => (
+                  <button
+                    key={src.id}
+                    type="button"
+                    onClick={() => handlePickOrderSource(src.id)}
+                    className={chipClass(orderSourceId === src.id)}
+                  >
+                    {orderSourceId === src.id && <Check className="h-3.5 w-3.5" />}
+                    {src.name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setOrderSourceId(OTHER_SOURCE)}
+                  className={chipClass(orderSourceId === OTHER_SOURCE)}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Other
+                </button>
+              </div>
+              {orderSourceId === OTHER_SOURCE && (
+                <div className="mt-2">
+                  <CreatableSelect
+                    options={orderSources}
+                    value=""
+                    onChange={(id) => id && setOrderSourceId(id)}
+                    onCreate={createOrderSource}
+                    placeholder="Type name (e.g. Instagram, WhatsApp)"
+                    createLabel="Add"
+                    autoOpen
+                  />
+                </div>
+              )}
+            </div>
 
-                  {/* Category */}
-                  <div>
-                    <label className={labelClass}>Category</label>
-                    <CreatableSelect
-                      options={categories}
-                      value={it.categoryId}
-                      onChange={(id) => setItem(it.key, { categoryId: id })}
-                      onCreate={createCategoryFor(it.key)}
-                      placeholder="Select category (e.g. Car Top Cover)"
-                      createLabel="Create category"
-                    />
-                  </div>
+            {/* Order identity: marketplace order ID + courier tracking (both optional, can be added later with Edit) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {orderIdLabel || showOrderIdField || form.externalOrderId ? (
+                <div>
+                  <label className={labelClass}>{orderIdLabel || 'Order ID'}</label>
+                  <input
+                    type="text"
+                    value={form.externalOrderId}
+                    onChange={(e) => set('externalOrderId', e.target.value)}
+                    placeholder={orderIdLabel ? `e.g. ${orderSourceName === 'daraz' ? '204857361029' : 'WEB-1045'}` : 'Order ID'}
+                    className={inputClass}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowOrderIdField(true)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 pb-2"
+                  >
+                    + Add order ID
+                  </button>
+                </div>
+              )}
+              <div>
+                <label className={labelClass}>{trackingLabel}</label>
+                <input
+                  type="text"
+                  value={form.trackingNumber}
+                  onChange={(e) => set('trackingNumber', e.target.value)}
+                  placeholder="Optional — add later if you don't have it yet"
+                  className={inputClass}
+                />
+              </div>
+            </div>
 
-                  {/* Product name */}
-                  <div>
-                    <label className={labelClass}>Product / Cover *</label>
-                    <div className="relative">
-                      <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                      <input
-                        type="text"
-                        value={it.productName}
-                        onChange={(e) => setItem(it.key, { productName: e.target.value })}
-                        placeholder="e.g. Corolla 2018 top cover"
-                        className={`${inputClass} pl-9`}
-                      />
-                    </div>
-                  </div>
+            {/* Customer (required) */}
+            <div className="border border-slate-200 rounded-xl p-3 space-y-3">
+              <div className="text-xs font-semibold text-slate-700">Customer details *</div>
+              <input
+                type="text"
+                value={form.customerName}
+                onChange={(e) => set('customerName', e.target.value)}
+                placeholder="Customer name *"
+                className={inputClass}
+              />
+              <input
+                type="text"
+                value={form.city}
+                onChange={(e) => handleCityChange(e.target.value)}
+                placeholder="City * (fills DC automatically)"
+                className={inputClass}
+              />
+              <input
+                type="text"
+                value={form.address}
+                onChange={(e) => set('address', e.target.value)}
+                placeholder="Address *"
+                className={inputClass}
+              />
+            </div>
 
-                  <fieldset disabled={moneyLocked} className="space-y-3 disabled:opacity-60">
-                  {/* Supplier / source */}
-                  <div>
-                    <label className={labelClass}>Bought from</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {suppliers.map((s) => (
-                        <button key={s.id} type="button" onClick={() => chooseSupplier(it.key, s.id)} className={chipClass(it.source === s.id)}>
-                          {it.source === s.id && <Check className="h-3.5 w-3.5" />}
-                          {s.name}
-                        </button>
-                      ))}
-                      <button type="button" onClick={() => chooseSupplier(it.key, OTHER_SOURCE)} className={chipClass(it.source === OTHER_SOURCE)}>
-                        <Plus className="h-3.5 w-3.5" /> Other
-                      </button>
-                      {(availableReturned.length > 0 || it.returnedLabel) && (
+            {/* Products */}
+            <div className="space-y-3">
+              {items.map((it, idx) => {
+                // A returned cover can only go into one product line
+                const takenElsewhere = new Set(items.filter((o) => o.key !== it.key).map((o) => o.returnedItemId).filter(Boolean))
+                const availableReturned = returnedItems.filter((r) => !takenElsewhere.has(r.id))
+                const line = lineTotals[idx]
+                return (
+                  <div key={it.key} className={`space-y-3 ${isParcel ? 'rounded-xl border border-slate-200 p-3' : ''}`}>
+                    {isParcel && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700">
+                          Product {idx + 1}
+                          {line.sale > 0 && <span className="font-normal text-slate-500"> · {formatPKR(line.sale)}</span>}
+                        </span>
                         <button
                           type="button"
-                          onClick={() => chooseSupplier(it.key, RETURNED_SOURCE)}
-                          className={chipClass(it.source === RETURNED_SOURCE)}
+                          disabled={moneyLocked}
+                          onClick={() => removeItem(it.key)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                          title="Remove product"
                         >
-                          <Recycle className="h-3.5 w-3.5" /> Returned stock ({availableReturned.length})
+                          <Trash2 className="h-4 w-4" />
                         </button>
+                      </div>
+                    )}
+
+                    {/* Category + product name side by side on wider screens */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Category */}
+                    <div>
+                      <label className={labelClass}>Category</label>
+                      <CreatableSelect
+                        options={categories}
+                        value={it.categoryId}
+                        onChange={(id) => setItem(it.key, { categoryId: id })}
+                        onCreate={createCategoryFor(it.key)}
+                        placeholder="Select category (e.g. Car Top Cover)"
+                        createLabel="Create category"
+                      />
+                    </div>
+
+                    {/* Product name */}
+                    <div>
+                      <label className={labelClass}>Product / Cover *</label>
+                      <div className="relative">
+                        <Package className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                        <input
+                          type="text"
+                          value={it.productName}
+                          onChange={(e) => setItem(it.key, { productName: e.target.value })}
+                          placeholder="e.g. Corolla 2018 top cover"
+                          className={`${inputClass} pl-9`}
+                        />
+                      </div>
+                    </div>
+                    </div>
+
+                    <fieldset disabled={moneyLocked} className="space-y-3 disabled:opacity-60">
+                    {/* Supplier / source */}
+                    <div>
+                      <label className={labelClass}>Bought from</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {suppliers.map((s) => (
+                          <button key={s.id} type="button" onClick={() => chooseSupplier(it.key, s.id)} className={chipClass(it.source === s.id)}>
+                            {it.source === s.id && <Check className="h-3.5 w-3.5" />}
+                            {s.name}
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => chooseSupplier(it.key, OTHER_SOURCE)} className={chipClass(it.source === OTHER_SOURCE)}>
+                          <Plus className="h-3.5 w-3.5" /> Other
+                        </button>
+                        {(availableReturned.length > 0 || it.returnedLabel) && (
+                          <button
+                            type="button"
+                            onClick={() => chooseSupplier(it.key, RETURNED_SOURCE)}
+                            className={chipClass(it.source === RETURNED_SOURCE)}
+                          >
+                            <Recycle className="h-3.5 w-3.5" /> Returned stock ({availableReturned.length})
+                          </button>
+                        )}
+                      </div>
+
+                      {it.source === OTHER_SOURCE && (
+                        <div className="mt-2">
+                          <CreatableSelect
+                            options={suppliers}
+                            value=""
+                            onChange={(id) => id && chooseSupplier(it.key, id)}
+                            onCreate={createSupplierFor(it.key)}
+                            placeholder="Type supplier name"
+                            createLabel="Add supplier"
+                            autoOpen
+                          />
+                        </div>
+                      )}
+
+                      {it.source === RETURNED_SOURCE && (
+                        <select
+                          value={it.returnedItemId}
+                          onChange={(e) => handlePickReturnedItem(it.key, e.target.value)}
+                          className={`${inputClass} mt-2`}
+                        >
+                          <option value="">-- Select returned item --</option>
+                          {it.returnedLabel && it.returnedItemId && !availableReturned.some((r) => r.id === it.returnedItemId) && (
+                            <option value={it.returnedItemId}>{it.returnedLabel} (current)</option>
+                          )}
+                          {availableReturned.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.productName} x{r.quantity} — cost Rs. {r.costPrice} ({new Date(r.createdAt).toLocaleDateString()})
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
 
-                    {it.source === OTHER_SOURCE && (
-                      <div className="mt-2">
-                        <CreatableSelect
-                          options={suppliers}
-                          value=""
-                          onChange={(id) => id && chooseSupplier(it.key, id)}
-                          onCreate={createSupplierFor(it.key)}
-                          placeholder="Type supplier name"
-                          createLabel="Add supplier"
-                          autoOpen
+                    {/* Pricing */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className={labelClass}>Qty</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={it.quantity}
+                          onChange={(e) => setItem(it.key, { quantity: e.target.value })}
+                          className={inputClass}
                         />
                       </div>
-                    )}
-
-                    {it.source === RETURNED_SOURCE && (
-                      <select
-                        value={it.returnedItemId}
-                        onChange={(e) => handlePickReturnedItem(it.key, e.target.value)}
-                        className={`${inputClass} mt-2`}
-                      >
-                        <option value="">-- Select returned item --</option>
-                        {it.returnedLabel && it.returnedItemId && !availableReturned.some((r) => r.id === it.returnedItemId) && (
-                          <option value={it.returnedItemId}>{it.returnedLabel} (current)</option>
-                        )}
-                        {availableReturned.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.productName} x{r.quantity} — cost Rs. {r.costPrice} ({new Date(r.createdAt).toLocaleDateString()})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Pricing */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className={labelClass}>Qty</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={it.quantity}
-                        onChange={(e) => setItem(it.key, { quantity: e.target.value })}
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Buy price *</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={it.costPrice}
-                        onChange={(e) => setItem(it.key, { costPrice: e.target.value })}
-                        placeholder="1200"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>Sale price *</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={it.soldPrice}
-                        onChange={(e) => setItem(it.key, { soldPrice: e.target.value })}
-                        placeholder="2200"
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Supplier payment for this product */}
-                  {it.source !== RETURNED_SOURCE && (
-                    <div className="flex items-center justify-between bg-slate-100/50 border border-slate-300/60 rounded-xl px-3 py-2">
-                      <span className="text-xs font-semibold text-slate-700">Supplier payment</span>
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setItem(it.key, { supplierPaid: false })}
-                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
-                            !it.supplierPaid ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          Pending
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setItem(it.key, { supplierPaid: true })}
-                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
-                            it.supplierPaid ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          Paid
-                        </button>
+                      <div>
+                        <label className={labelClass}>Buy price *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={it.costPrice}
+                          onChange={(e) => setItem(it.key, { costPrice: e.target.value })}
+                          placeholder="1200"
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Sale price *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={it.soldPrice}
+                          onChange={(e) => setItem(it.key, { soldPrice: e.target.value })}
+                          placeholder="2200"
+                          className={inputClass}
+                        />
                       </div>
                     </div>
-                  )}
-                  </fieldset>
+
+                    {/* Supplier payment for this product */}
+                    {it.source !== RETURNED_SOURCE && (
+                      <div className="flex items-center justify-between bg-slate-100/50 border border-slate-300/60 rounded-xl px-3 py-2">
+                        <span className="text-xs font-semibold text-slate-700">Supplier payment</span>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setItem(it.key, { supplierPaid: false })}
+                            className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                              !it.supplierPaid ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            Pending
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setItem(it.key, { supplierPaid: true })}
+                            className={`px-3 py-1 rounded-lg text-[11px] font-bold transition ${
+                              it.supplierPaid ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            Paid
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    </fieldset>
+                  </div>
+                )
+              })}
+
+              {!moneyLocked && (
+              <button
+                type="button"
+                onClick={addItem}
+                className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 flex items-center justify-center gap-1.5 transition"
+              >
+                <Plus className="h-4 w-4" /> Add another product
+              </button>
+              )}
+            </div>
+
+          </div>
+
+          {/* Right: payment, expenses and the profit summary */}
+          <div className="px-4 pt-4 pb-4 sm:px-5 lg:p-6 space-y-4 lg:overflow-y-auto lg:border-l lg:border-slate-200 lg:bg-slate-50/60">
+            {/* Who pays us for this order */}
+            <div>
+              <label className={labelClass}>Payment from</label>
+              <div className="flex flex-wrap gap-1.5">
+                {paymentSources.map((src) => (
+                  <button
+                    key={src.id}
+                    type="button"
+                    onClick={() => (paymentSourceId === src.id ? setPaymentSourceId('') : choosePaymentSource(src.id))}
+                    className={chipClass(paymentSourceId === src.id)}
+                  >
+                    {paymentSourceId === src.id && <Check className="h-3.5 w-3.5" />}
+                    {src.name}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPaymentSourceId(OTHER_SOURCE)}
+                  className={chipClass(paymentSourceId === OTHER_SOURCE)}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Other
+                </button>
+              </div>
+              {paymentSourceId === OTHER_SOURCE && (
+                <div className="mt-2">
+                  <CreatableSelect
+                    options={paymentSources}
+                    value=""
+                    onChange={(id) => id && choosePaymentSource(id)}
+                    onCreate={createPaymentSource}
+                    placeholder="Type name (e.g. TCS, Easypaisa)"
+                    createLabel="Add"
+                    autoOpen
+                  />
                 </div>
-              )
-            })}
+              )}
+            </div>
 
-            {!moneyLocked && (
-            <button
-              type="button"
-              onClick={addItem}
-              className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50 flex items-center justify-center gap-1.5 transition"
-            >
-              <Plus className="h-4 w-4" /> Add another product
-            </button>
-            )}
-          </div>
+            {/* Expected payout (Daraz / courier may cut tax or fees) */}
+            <div>
+              <label className={labelClass}>Expected to receive (Rs){isParcel ? ' — whole parcel' : ''}</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                disabled={moneyLocked || payoutLocked}
+                value={form.expectedAmount}
+                onChange={(e) => set('expectedAmount', e.target.value)}
+                placeholder={saleTotal > 0 ? `${saleTotal} (same as sale)` : 'Same as sale price'}
+                className={inputClass}
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                {payoutLocked
+                  ? 'Payment is already received. Change the actual amount with "Edit amount" in order details.'
+                  : 'Leave blank if the full sale amount will come. You can change it when the payment arrives.'}
+              </p>
+            </div>
 
-          {/* Who pays us for this order */}
-          <div>
-            <label className={labelClass}>Payment from</label>
-            <div className="flex flex-wrap gap-1.5">
-              {paymentSources.map((src) => (
+            {/* Whose account the money lands in */}
+            <div>
+              <label className={labelClass}>Money goes to</label>
+              <div className="flex flex-wrap gap-1.5">
+                {people.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setReceivedById(receivedById === p.id ? '' : p.id)}
+                    className={chipClass(receivedById === p.id)}
+                  >
+                    {receivedById === p.id && <Check className="h-3.5 w-3.5" />}
+                    {p.name}
+                  </button>
+                ))}
                 <button
-                  key={src.id}
                   type="button"
-                  onClick={() => (paymentSourceId === src.id ? setPaymentSourceId('') : choosePaymentSource(src.id))}
-                  className={chipClass(paymentSourceId === src.id)}
+                  onClick={() => setReceivedById(OTHER_SOURCE)}
+                  className={chipClass(receivedById === OTHER_SOURCE)}
                 >
-                  {paymentSourceId === src.id && <Check className="h-3.5 w-3.5" />}
-                  {src.name}
+                  <Plus className="h-3.5 w-3.5" /> Other
                 </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setPaymentSourceId(OTHER_SOURCE)}
-                className={chipClass(paymentSourceId === OTHER_SOURCE)}
-              >
-                <Plus className="h-3.5 w-3.5" /> Other
-              </button>
-            </div>
-            {paymentSourceId === OTHER_SOURCE && (
-              <div className="mt-2">
-                <CreatableSelect
-                  options={paymentSources}
-                  value=""
-                  onChange={(id) => id && choosePaymentSource(id)}
-                  onCreate={createPaymentSource}
-                  placeholder="Type name (e.g. TCS, Easypaisa)"
-                  createLabel="Add"
-                  autoOpen
-                />
               </div>
-            )}
-          </div>
+              {receivedById === OTHER_SOURCE && (
+                <div className="mt-2">
+                  <CreatableSelect
+                    options={people}
+                    value=""
+                    onChange={(id) => id && setReceivedById(id)}
+                    onCreate={createPerson}
+                    placeholder="Type person name"
+                    createLabel="Add"
+                    autoOpen
+                  />
+                </div>
+              )}
+            </div>
 
-          {/* Expected payout (Daraz / courier may cut tax or fees) */}
-          <div>
-            <label className={labelClass}>Expected to receive (Rs){isParcel ? ' — whole parcel' : ''}</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              disabled={moneyLocked || payoutLocked}
-              value={form.expectedAmount}
-              onChange={(e) => set('expectedAmount', e.target.value)}
-              placeholder={saleTotal > 0 ? `${saleTotal} (same as sale)` : 'Same as sale price'}
-              className={inputClass}
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              {payoutLocked
-                ? 'Payment is already received. Change the actual amount with "Edit amount" in order details.'
-                : 'Leave blank if the full sale amount will come. You can change it when the payment arrives.'}
-            </p>
-          </div>
+            {/* Expenses (whole parcel) */}
+            <fieldset disabled={moneyLocked} className="disabled:opacity-60">
+              <label className={labelClass}>
+                Expenses (Rs){isParcel ? ' — whole parcel' : ''}{' '}
+                {isLoadingCityFee && <span className="text-[10px] text-emerald-600 animate-pulse">(loading DC...)</span>}
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="relative">
+                  <Truck className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.deliveryCharge}
+                    onChange={(e) => set('deliveryCharge', e.target.value)}
+                    placeholder="DC"
+                    className={`${inputClass} sm:pl-9`}
+                  />
+                </div>
+                <div className="relative">
+                  <Fuel className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.petrolCost}
+                    onChange={(e) => set('petrolCost', e.target.value)}
+                    placeholder="Petrol"
+                    className={`${inputClass} sm:pl-9`}
+                  />
+                </div>
+                <div className="relative">
+                  <Receipt className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={form.gstAmount}
+                    onChange={(e) => set('gstAmount', e.target.value)}
+                    placeholder="GST"
+                    className={`${inputClass} sm:pl-9`}
+                  />
+                </div>
+              </div>
+            </fieldset>
 
-          {/* Whose account the money lands in */}
-          <div>
-            <label className={labelClass}>Money goes to</label>
-            <div className="flex flex-wrap gap-1.5">
-              {people.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setReceivedById(receivedById === p.id ? '' : p.id)}
-                  className={chipClass(receivedById === p.id)}
-                >
-                  {receivedById === p.id && <Check className="h-3.5 w-3.5" />}
-                  {p.name}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setReceivedById(OTHER_SOURCE)}
-                className={chipClass(receivedById === OTHER_SOURCE)}
-              >
-                <Plus className="h-3.5 w-3.5" /> Other
-              </button>
-            </div>
-            {receivedById === OTHER_SOURCE && (
-              <div className="mt-2">
-                <CreatableSelect
-                  options={people}
-                  value=""
-                  onChange={(id) => id && setReceivedById(id)}
-                  onCreate={createPerson}
-                  placeholder="Type person name"
-                  createLabel="Add"
-                  autoOpen
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Expenses (whole parcel) */}
-          <fieldset disabled={moneyLocked} className="disabled:opacity-60">
-            <label className={labelClass}>
-              Expenses (Rs){isParcel ? ' — whole parcel' : ''}{' '}
-              {isLoadingCityFee && <span className="text-[10px] text-emerald-600 animate-pulse">(loading DC...)</span>}
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="relative">
-                <Truck className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.deliveryCharge}
-                  onChange={(e) => set('deliveryCharge', e.target.value)}
-                  placeholder="DC"
-                  className={`${inputClass} sm:pl-9`}
-                />
-              </div>
-              <div className="relative">
-                <Fuel className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.petrolCost}
-                  onChange={(e) => set('petrolCost', e.target.value)}
-                  placeholder="Petrol"
-                  className={`${inputClass} sm:pl-9`}
-                />
-              </div>
-              <div className="relative">
-                <Receipt className="hidden sm:block absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.gstAmount}
-                  onChange={(e) => set('gstAmount', e.target.value)}
-                  placeholder="GST"
-                  className={`${inputClass} sm:pl-9`}
-                />
-              </div>
-            </div>
-          </fieldset>
-
-          {/* Customer (optional) */}
-          <div className="border border-slate-200 rounded-xl">
-            <button
-              type="button"
-              onClick={() => setShowCustomer((v) => !v)}
-              className="w-full px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center justify-between"
-            >
-              Customer details (optional)
-              {showCustomer ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            {showCustomer && (
-              <div className="p-3 pt-0 space-y-3">
-                <input
-                  type="text"
-                  value={form.customerName}
-                  onChange={(e) => set('customerName', e.target.value)}
-                  placeholder="Customer name"
-                  className={inputClass}
-                />
-                <input
-                  type="text"
-                  value={form.city}
-                  onChange={(e) => handleCityChange(e.target.value)}
-                  placeholder="City (fills DC automatically)"
-                  className={inputClass}
-                />
-                <input
-                  type="text"
-                  value={form.address}
-                  onChange={(e) => set('address', e.target.value)}
-                  placeholder="Address"
-                  className={inputClass}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Live summary */}
-          <div className="bg-slate-100/60 border border-slate-300/80 rounded-xl p-3 space-y-1.5 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Sale{isParcel ? ` (${items.length} products)` : ''}</span>
-              <span className="text-slate-800">{formatPKR(saleTotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">− Cover cost</span>
-              <span className="text-slate-700">{formatPKR(costTotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">− DC + Petrol + GST</span>
-              <span className="text-slate-700">{formatPKR(dc + petrol + gst)}</span>
-            </div>
-            {Math.abs(payoutCut) >= 0.5 && (
+            {/* Live summary */}
+            <div className="bg-slate-100/60 border border-slate-300/80 rounded-xl p-3 space-y-1.5 text-xs font-mono">
               <div className="flex justify-between">
-                <span className="text-slate-500">{payoutCut > 0 ? '− Payment cut (tax / fees)' : '+ Extra received'}</span>
-                <span className="text-slate-700">{formatPKR(Math.abs(payoutCut))}</span>
+                <span className="text-slate-500">Sale{isParcel ? ` (${items.length} products)` : ''}</span>
+                <span className="text-slate-800">{formatPKR(saleTotal)}</span>
               </div>
-            )}
-            <div className="flex justify-between pt-1.5 border-t border-slate-300/60 text-sm font-bold">
-              <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>Profit</span>
-              <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                {formatPKR(profit)} ({margin}%)
-              </span>
+              <div className="flex justify-between">
+                <span className="text-slate-500">− Cover cost</span>
+                <span className="text-slate-700">{formatPKR(costTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">− DC + Petrol + GST</span>
+                <span className="text-slate-700">{formatPKR(dc + petrol + gst)}</span>
+              </div>
+              {Math.abs(payoutCut) >= 0.5 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">{payoutCut > 0 ? '− Payment cut (tax / fees)' : '+ Extra received'}</span>
+                  <span className="text-slate-700">{formatPKR(Math.abs(payoutCut))}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1.5 border-t border-slate-300/60 text-sm font-bold">
+                <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>Profit</span>
+                <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                  {formatPKR(profit)} ({margin}%)
+                </span>
+              </div>
             </div>
+
           </div>
 
-          {/* Stays visible at the bottom while the form scrolls (phones) */}
-          <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-100">
+          {/* Save: stays visible at the bottom on phones; bottom of the right column on laptops */}
+          <div className="sticky bottom-0 px-4 sm:px-5 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-100 lg:static lg:col-start-2 lg:px-6 lg:pt-3 lg:pb-5 lg:border-l lg:border-slate-200 lg:bg-slate-50/60">
             <button
               type="submit"
               disabled={isSubmitting}

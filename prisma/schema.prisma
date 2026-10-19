@@ -217,6 +217,11 @@ model Sale {
   receivedAmount         Float?
   // Products bought together by one customer share a parcelId (null = single-product order)
   parcelId               String?
+  // Our own short order number (#1001...), shared by a parcel's products
+  orderNo                Int?
+  // Daraz / Website order ID, and the courier (Leopards...) tracking number
+  externalOrderId        String?
+  trackingNumber         String?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
@@ -238,6 +243,15 @@ model Sale {
   @@index([orderSourceId])
   @@index([receivedById])
   @@index([parcelId])
+  @@index([orderNo])
+  @@index([externalOrderId])
+  @@index([trackingNumber])
+}
+
+// Atomic counters (e.g. the next order number)
+model Counter {
+  key   String @id
+  value Int
 }
 
 model CityDeliveryRate {

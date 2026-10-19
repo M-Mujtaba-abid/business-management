@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
+import { cleanRef, findDuplicateRef } from '@/lib/orderRefs'
 
 interface EditItemInput {
   id?: string // existing product row; missing = new product added to the order
@@ -45,14 +46,26 @@ export async function PUT(
       }
     }
 
-    // Shared, non-money fields
+    // Shared, non-money fields (customer details are required)
     const shared = {
-      customerName: text(body.customerName) || 'Walk-in',
+      customerName: text(body.customerName),
       address: text(body.address),
-      city: text(body.city) || 'General',
+      city: text(body.city),
       orderSourceId: body.orderSourceId || null,
       paymentSourceId: body.paymentSourceId || null,
       receivedById: body.receivedById || null,
+      // order identity: editable on any order, returned ones too (the order number itself never changes)
+      externalOrderId: cleanRef(body.externalOrderId),
+      trackingNumber: cleanRef(body.trackingNumber),
+    }
+
+    if (!shared.customerName || !shared.city || !shared.address) {
+      return NextResponse.json({ error: 'Customer name, city and address are required.' }, { status: 400 })
+    }
+
+    if (!body.allowDuplicate) {
+      const duplicate = await findDuplicateRef(prisma, shared, existing.map((s) => s.id))
+      if (duplicate) return NextResponse.json({ error: duplicate, duplicate: true }, { status: 409 })
     }
 
     // ── Returned order: money is settled, only names / categories / customer can change ──
@@ -212,6 +225,7 @@ export async function PUT(
                 paymentReceivedAt: lead.paymentReceivedAt,
                 deductDeliveryOnReturn: lead.deductDeliveryOnReturn,
                 createdAt: lead.createdAt,
+                orderNo: lead.orderNo,
               },
             })
 

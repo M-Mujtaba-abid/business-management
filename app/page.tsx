@@ -108,6 +108,7 @@ export default function Home() {
       if (orderFilters.supplierId) url += `&supplierId=${orderFilters.supplierId}`
       if (orderFilters.supplierPayment) url += `&supplierPayment=${orderFilters.supplierPayment}`
       if (orderFilters.olderThanDays) url += `&olderThanDays=${orderFilters.olderThanDays}`
+      if (orderFilters.missingRef) url += `&missingRef=1`
       if (orderFilters.receivedById) url += `&receivedById=${orderFilters.receivedById}`
       if (orderFilters.orderSourceId) url += `&orderSourceId=${orderFilters.orderSourceId}`
       if (orderFilters.paymentSourceId) url += `&paymentSourceId=${orderFilters.paymentSourceId}`
@@ -233,25 +234,6 @@ export default function Home() {
     } catch (err: any) {
       toast.error(err.message || 'Failed to save payment')
       throw err
-    }
-  }
-
-  // Change whose account the order money goes to
-  const handleSetReceivedBy = async (saleIds: string[], personId: string | null) => {
-    try {
-      const res = await fetch('/api/sales/customer-payment', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ saleIds, receivedById: personId }),
-      })
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error || 'Failed to update person')
-      }
-      toast.success('Updated who receives the money')
-      refreshAll()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update person')
     }
   }
 
@@ -398,14 +380,9 @@ export default function Home() {
         items={drawerItems}
         isOpen={Boolean(selectedDrawerSale)}
         onClose={() => setSelectedDrawerSale(null)}
-        onUpdateStatus={handleUpdateStatus}
-        onOpenReturnModal={(sale) => setReturnModalSale(sale)}
         onDeleteSale={handleDeleteSale}
-        onSetSupplierPayment={handleSetSupplierPayment}
-        onSetCustomerPayment={handleSetCustomerPayment}
-        onSetReceivedBy={handleSetReceivedBy}
-        onReceivePayment={(sale, mode) => setReceiveModal({ sale, mode })}
         onEditOrder={(items) => setEditOrderItems(items)}
+        onSaved={refreshAll}
       />
 
       <ReceivePaymentModal

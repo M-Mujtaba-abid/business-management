@@ -20,6 +20,7 @@ import {
 import StatusBadge from './ui/StatusBadge'
 import { Sale, SupplierPayBadge, PaymentBadge } from './OrderList'
 import { groupSales, OrderGroup } from '@/lib/parcels'
+import { formatDateTime } from '@/lib/format'
 import { useCountUp, formatPKR } from './charts/hooks'
 import Sparkline from './charts/Sparkline'
 import MiniBars from './charts/MiniBars'
@@ -510,7 +511,7 @@ export default function DashboardStats({
                   <div className="min-w-0">
                     <div className="font-medium text-sm text-slate-900 truncate">{groupTitle({ lead: sale, ...g })}</div>
                     <div className="text-[11px] text-slate-500 truncate">
-                      {[sale.orderSource?.name, g.supplierNames.join(', ')].filter(Boolean).join(' · ') || '—'}
+                      {[formatDateTime(sale.createdAt, true), sale.orderSource?.name, g.supplierNames.join(', ')].filter(Boolean).join(' · ')}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       <StatusBadge status={sale.status} />
@@ -543,11 +544,11 @@ export default function DashboardStats({
                     <tr key={g.key} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => onSelectOrder(sale)}>
                       <td className="px-3 py-3 max-w-[260px]">
                         <div className="font-medium text-slate-900 truncate">{groupTitle({ lead: sale, ...g })}</div>
-                        {(sale.orderSource?.name || (g.items.length === 1 && sale.category?.name)) && (
-                          <div className="text-xs text-slate-500">
-                            {[sale.orderSource?.name, g.items.length === 1 ? sale.category?.name : null].filter(Boolean).join(' · ')}
-                          </div>
-                        )}
+                        <div className="text-xs text-slate-500">
+                          {[formatDateTime(sale.createdAt, true), sale.orderSource?.name, g.items.length === 1 ? sale.category?.name : null]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-slate-600">
                         {g.supplierNames.join(', ') || '—'}

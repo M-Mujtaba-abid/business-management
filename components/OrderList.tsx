@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import CopyRef from './ui/CopyRef'
+import { formatDateTime } from '@/lib/format'
 import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
@@ -601,7 +602,7 @@ export default function OrderList({
                       )}
                       {g.items.length === 1 && sale.category?.name && <span className="text-sky-600">{sale.category.name}</span>}
                       {g.items.length === 1 && <span>Qty {sale.quantity}</span>}
-                      <span>· {new Date(sale.createdAt).toLocaleDateString()}</span>
+                      <span>· {formatDateTime(sale.createdAt, true)}</span>
                     </div>
                     {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
                       <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
@@ -654,7 +655,7 @@ export default function OrderList({
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Payment</th>
                 <th className="px-4 py-3">Supplier Pay</th>
-                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Added</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -748,8 +749,9 @@ export default function OrderList({
                     </td>
 
                     {/* Date */}
-                    <td className="px-4 py-3.5 font-mono text-slate-500 text-[11px]">
-                      {new Date(sale.createdAt).toLocaleDateString()}
+                    <td className="px-4 py-3.5 text-slate-500 text-[11px] whitespace-nowrap">
+                      <div>{new Date(sale.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                      <div className="text-slate-400">{new Date(sale.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</div>
                     </td>
 
                     {/* Action Buttons */}

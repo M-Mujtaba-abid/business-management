@@ -9,6 +9,7 @@ import StatusBadge from './StatusBadge'
 import CopyRef from './CopyRef'
 import { Sale } from '../OrderList'
 import { groupSales } from '@/lib/parcels'
+import { formatDateTime } from '@/lib/format'
 
 export type { Sale }
 
@@ -207,7 +208,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                 <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 break-words">
                   {isParcel ? group.items.map((i) => i.productName).join(', ') : lead.productName}
                 </h2>
-                <p className="text-xs text-slate-500">{new Date(lead.createdAt).toLocaleString()}</p>
+                <p className="text-xs text-slate-500">Added {formatDateTime(lead.createdAt)}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button

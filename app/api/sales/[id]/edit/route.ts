@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
-import { cleanRef, findDuplicateRef } from '@/lib/orderRefs'
+import { cleanRef, findDuplicateRef, parseOrderDate } from '@/lib/orderRefs'
 
 interface EditItemInput {
   id?: string // existing product row; missing = new product added to the order
@@ -58,6 +58,11 @@ export async function PUT(
       externalOrderId: cleanRef(body.externalOrderId),
       trackingNumber: cleanRef(body.trackingNumber),
     }
+
+    // Order date (applies to the whole parcel); missing = keep the saved one
+    const orderDate = parseOrderDate(body.orderDate)
+    if (typeof orderDate === 'string') return NextResponse.json({ error: orderDate }, { status: 400 })
+    if (orderDate) Object.assign(shared, { createdAt: orderDate })
 
     if (!shared.customerName || !shared.city || !shared.address) {
       return NextResponse.json({ error: 'Customer name, city and address are required.' }, { status: 400 })
@@ -224,7 +229,7 @@ export async function PUT(
                 paymentStatus: lead.paymentStatus,
                 paymentReceivedAt: lead.paymentReceivedAt,
                 deductDeliveryOnReturn: lead.deductDeliveryOnReturn,
-                createdAt: lead.createdAt,
+                createdAt: orderDate || lead.createdAt,
                 orderNo: lead.orderNo,
               },
             })

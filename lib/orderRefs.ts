@@ -43,3 +43,13 @@ export async function findDuplicateRef(
   }
   return null
 }
+
+// Order date sent by the form (ISO with timezone). Undefined = not sent / keep; Error message when invalid.
+export const parseOrderDate = (v: unknown): Date | undefined | string => {
+  if (v === undefined || v === null || v === '') return undefined
+  const d = new Date(String(v))
+  if (isNaN(d.getTime())) return 'Order date is not valid.'
+  // allow a little clock drift, but not orders dated in the future
+  if (d.getTime() > Date.now() + 5 * 60 * 1000) return 'Order date cannot be in the future.'
+  return d
+}

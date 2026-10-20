@@ -5,6 +5,7 @@ import { X, Sparkles, Package, Truck, Fuel, Receipt, Check, Recycle, Plus, Trash
 import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
+import { formatDateTime } from '@/lib/format'
 
 interface ReturnedItem {
   id: string
@@ -57,6 +58,12 @@ const newItem = (): ItemDraft => ({
 })
 
 // Fields shared by the whole order / parcel
+// Local "YYYY-MM-DDTHH:mm" for a datetime-local input
+const toLocalInput = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const emptyForm = {
   deliveryCharge: '',
   petrolCost: '',
@@ -67,6 +74,7 @@ const emptyForm = {
   address: '',
   externalOrderId: '', // Daraz / Website order ID
   trackingNumber: '', // courier (Leopards...) tracking number
+  orderDate: '', // when the order was taken (datetime-local); filled with "now" when the form opens
 }
 
 const inputClass =
@@ -122,6 +130,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       .catch(console.error)
   }, [isOpen])
 
+  // New order: the date starts at "now" each time the form opens
+  useEffect(() => {
+    if (!isOpen || (editItems && editItems.length)) return
+    setForm((prev) => ({ ...prev, orderDate: toLocalInput(new Date()) }))
+  }, [isOpen, editItems])
+
   // Edit mode: fill the form from the saved order
   useEffect(() => {
     if (!isOpen || !editItems || editItems.length === 0) return
@@ -138,6 +152,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       address: first.address || '',
       externalOrderId: first.externalOrderId || '',
       trackingNumber: first.trackingNumber || '',
+      orderDate: toLocalInput(new Date(first.createdAt)),
     })
     setItems(
       editItems.map((s) => {
@@ -346,6 +361,15 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     e.preventDefault()
     setError(null)
 
+    if (!form.orderDate || isNaN(new Date(form.orderDate).getTime())) {
+      setError('Pick the order date and time.')
+      return
+    }
+    if (new Date(form.orderDate).getTime() > Date.now() + 5 * 60 * 1000) {
+      setError('Order date cannot be in the future.')
+      return
+    }
+
     if (!form.customerName.trim() || !form.city.trim() || !form.address.trim()) {
       setError('Customer name, city and address are required.')
       return
@@ -389,6 +413,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
         body: JSON.stringify({
           ...form,
           allowDuplicate,
+          // send with the browser's timezone so the server stores the exact moment;
+          // when editing, only if the date was actually changed (keeps the saved seconds)
+          orderDate:
+            form.orderDate && !(isEdit && lead && form.orderDate === toLocalInput(new Date(lead.createdAt)))
+              ? new Date(form.orderDate).toISOString()
+              : null,
           items: items.map((it) => {
             const isReturned = it.source === RETURNED_SOURCE
             return {
@@ -480,7 +510,9 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
             <div>
               <h2 className="text-base font-bold">{isEdit ? `Edit Order${lead?.orderNo ? ` #${lead.orderNo}` : ''}` : 'New Order'}</h2>
               <p className="text-xs text-slate-500">
-                {isParcel ? `${items.length} products in one parcel` : isEdit ? 'Change anything and save' : 'Quick entry: buy, sell, expenses'}
+                {isEdit && lead ? `Added ${formatDateTime(lead.createdAt)}` : ''}
+                {isEdit && lead && isParcel ? ' · ' : ''}
+                {isParcel ? `${items.length} products in one parcel` : isEdit ? '' : 'Quick entry: buy, sell, expenses'}
               </p>
             </div>
           </div>
@@ -542,6 +574,21 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                     autoOpen
                   />
                 </div>
+              )}
+            </div>
+
+            {/* Order date & time (defaults to now; pick an earlier one for orders entered late) */}
+            <div>
+              <label className={labelClass}>Order date & time</label>
+              <input
+                type="datetime-local"
+                value={form.orderDate}
+                max={toLocalInput(new Date())}
+                onChange={(e) => set('orderDate', e.target.value)}
+                className={inputClass}
+              />
+              {!isEdit && form.orderDate && form.orderDate.slice(0, 10) !== toLocalInput(new Date()).slice(0, 10) && (
+                <p className="text-[11px] text-amber-600 mt-1">This order will be saved with an earlier date.</p>
               )}
             </div>
 

@@ -53,3 +53,17 @@ export const parseOrderDate = (v: unknown): Date | undefined | string => {
   if (d.getTime() > Date.now() + 5 * 60 * 1000) return 'Order date cannot be in the future.'
   return d
 }
+
+// Required references per order source: Daraz needs its order ID, Website needs the Leopards tracking number
+export async function missingRequiredRef(
+  db: Prisma.TransactionClient,
+  orderSourceId: string | null | undefined,
+  refs: { externalOrderId: string | null; trackingNumber: string | null }
+): Promise<string | null> {
+  if (!orderSourceId) return null
+  const source = await db.orderSource.findUnique({ where: { id: orderSourceId }, select: { name: true } })
+  const name = source?.name.trim().toLowerCase()
+  if (name === 'daraz' && !refs.externalOrderId) return 'Daraz Order ID is required for Daraz orders.'
+  if (name === 'website' && !refs.trackingNumber) return 'Leopards tracking number is required for Website orders.'
+  return null
+}

@@ -361,6 +361,17 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     e.preventDefault()
     setError(null)
 
+    // Daraz orders need the Daraz order ID, Website orders the Leopards tracking number
+    const sourceName = (orderSources.find((o) => o.id === orderSourceId)?.name || '').trim().toLowerCase()
+    if (sourceName === 'daraz' && !form.externalOrderId.trim()) {
+      setError('Daraz Order ID is required for Daraz orders.')
+      return
+    }
+    if (sourceName === 'website' && !form.trackingNumber.trim()) {
+      setError('Leopards tracking number is required for Website orders.')
+      return
+    }
+
     if (!form.orderDate || isNaN(new Date(form.orderDate).getTime())) {
       setError('Pick the order date and time.')
       return
@@ -484,11 +495,18 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const isParcel = items.length > 1
 
   // Field labels follow where the order came from / who delivers it
-  const orderSourceName = (orderSources.find((o) => o.id === orderSourceId)?.name || '').toLowerCase()
+  const orderSourceName = (orderSources.find((o) => o.id === orderSourceId)?.name || '').trim().toLowerCase()
+  // Required: Daraz → its order ID, Website → Leopards tracking number
   const orderIdLabel =
-    orderSourceName === 'daraz' ? 'Daraz Order ID' : orderSourceName === 'website' ? 'Website Order #' : ''
+    orderSourceName === 'daraz' ? 'Daraz Order ID *' : orderSourceName === 'website' ? 'Website Order #' : ''
   const paymentSourceName = (paymentSources.find((p) => p.id === paymentSourceId)?.name || '').toLowerCase()
-  const trackingLabel = paymentSourceName === 'leopards' ? 'Leopards tracking number' : 'Courier tracking number'
+  const trackingLabel =
+    orderSourceName === 'website'
+      ? 'Leopards tracking number *'
+      : paymentSourceName === 'leopards'
+      ? 'Leopards tracking number'
+      : 'Courier tracking number'
+  const trackingRequired = orderSourceName === 'website'
 
   const chipClass = (active: boolean) =>
     `px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 ${
@@ -622,7 +640,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                   type="text"
                   value={form.trackingNumber}
                   onChange={(e) => set('trackingNumber', e.target.value)}
-                  placeholder="Optional — add later if you don't have it yet"
+                  placeholder={trackingRequired ? 'Required for Website orders' : "Optional — add later if you don't have it yet"}
                   className={inputClass}
                 />
               </div>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
 import { splitByWeight } from '@/lib/saleMoney'
-import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate } from '@/lib/orderRefs'
+import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef } from '@/lib/orderRefs'
 
 export const dynamic = 'force-dynamic'
 
@@ -174,6 +174,10 @@ export async function POST(request: NextRequest) {
     // When the order was taken (defaults to now); can be set to an earlier date
     const orderDate = parseOrderDate(body.orderDate)
     if (typeof orderDate === 'string') return NextResponse.json({ error: orderDate }, { status: 400 })
+
+    // Daraz orders need the Daraz order ID, Website orders the Leopards tracking number
+    const missingRef = await missingRequiredRef(prisma, orderSourceId, { externalOrderId, trackingNumber })
+    if (missingRef) return NextResponse.json({ error: missingRef }, { status: 400 })
 
     // Same order ID / tracking already saved: ask before saving it twice
     if (!allowDuplicate) {

@@ -70,6 +70,7 @@ const emptyForm = {
   gstAmount: '',
   expectedAmount: '',
   customerName: '',
+  customerPhone: '',
   city: '',
   address: '',
   externalOrderId: '', // Daraz / Website order ID
@@ -148,6 +149,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       gstAmount: String(sum((s) => s.gstAmount || 0) || ''),
       expectedAmount: hasPayoutEdit ? String(sum((s) => s.receivedAmount ?? s.soldPrice * s.quantity)) : '',
       customerName: first.customerName === 'Walk-in' ? '' : first.customerName,
+      customerPhone: first.customerPhone || '',
       city: first.city === 'General' ? '' : first.city,
       address: first.address || '',
       externalOrderId: first.externalOrderId || '',
@@ -383,6 +385,11 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
 
     if (!form.customerName.trim() || !form.city.trim() || !form.address.trim()) {
       setError('Customer name, city and address are required.')
+      return
+    }
+    const phoneDigits = form.customerPhone.replace(/\D/g, '')
+    if (phoneDigits.length < 10 || phoneDigits.length > 13) {
+      setError('Enter a valid customer phone number (e.g. 0300 1234567).')
       return
     }
 
@@ -649,13 +656,24 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
             {/* Customer (required) */}
             <div className="border border-slate-200 rounded-xl p-3 space-y-3">
               <div className="text-xs font-semibold text-slate-700">Customer details *</div>
-              <input
-                type="text"
-                value={form.customerName}
-                onChange={(e) => set('customerName', e.target.value)}
-                placeholder="Customer name *"
-                className={inputClass}
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={form.customerName}
+                  onChange={(e) => set('customerName', e.target.value)}
+                  placeholder="Customer name *"
+                  className={inputClass}
+                />
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={form.customerPhone}
+                  onChange={(e) => set('customerPhone', e.target.value)}
+                  placeholder="Phone * (0300 1234567)"
+                  className={inputClass}
+                />
+              </div>
               <input
                 type="text"
                 value={form.city}

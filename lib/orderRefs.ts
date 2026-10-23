@@ -67,3 +67,12 @@ export async function missingRequiredRef(
   if (name === 'website' && !refs.trackingNumber) return 'Leopards tracking number is required for Website orders.'
   return null
 }
+
+// Customer phone: keeps digits (and a leading +), e.g. "0300-1234567" → "03001234567".
+// Returns null when it does not look like a phone number (10–13 digits).
+export const cleanPhone = (v: unknown): string | null => {
+  const raw = typeof v === 'string' ? v.trim() : ''
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length < 10 || digits.length > 13) return null
+  return (raw.startsWith('+') ? '+' : '') + digits
+}

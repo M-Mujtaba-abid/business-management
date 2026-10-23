@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
-import { cleanRef, findDuplicateRef, parseOrderDate, missingRequiredRef } from '@/lib/orderRefs'
+import { cleanRef, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 
 interface EditItemInput {
   id?: string // existing product row; missing = new product added to the order
@@ -49,6 +49,7 @@ export async function PUT(
     // Shared, non-money fields (customer details are required)
     const shared = {
       customerName: text(body.customerName),
+      customerPhone: cleanPhone(body.customerPhone),
       address: text(body.address),
       city: text(body.city),
       orderSourceId: body.orderSourceId || null,
@@ -70,6 +71,9 @@ export async function PUT(
 
     if (!shared.customerName || !shared.city || !shared.address) {
       return NextResponse.json({ error: 'Customer name, city and address are required.' }, { status: 400 })
+    }
+    if (!shared.customerPhone) {
+      return NextResponse.json({ error: 'Enter a valid customer phone number (e.g. 0300 1234567).' }, { status: 400 })
     }
 
     if (!body.allowDuplicate) {

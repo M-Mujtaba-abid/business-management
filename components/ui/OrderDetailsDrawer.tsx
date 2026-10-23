@@ -435,6 +435,16 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                   <MapPin className="h-3.5 w-3.5 text-emerald-600" /> Customer
                 </h3>
                 <div className="text-sm font-bold text-slate-900">{lead.customerName}</div>
+                {lead.customerPhone ? (
+                  <div className="flex items-center gap-2">
+                    <a href={`tel:${lead.customerPhone}`} className="text-sm font-semibold text-blue-600 hover:underline font-mono">
+                      {lead.customerPhone}
+                    </a>
+                    <CopyRef label="" value={lead.customerPhone} className="[&>span:nth-child(2)]:hidden" />
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400">No phone — add with Edit</div>
+                )}
                 <div className="text-xs text-slate-600">{lead.address}</div>
                 <div className="text-xs font-semibold text-emerald-600">{lead.city}</div>
               </section>

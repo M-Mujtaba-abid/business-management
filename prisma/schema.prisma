@@ -191,6 +191,7 @@ model Sale {
   productId              String?
   productName            String
   customerName           String
+  customerPhone          String?
   address                String
   city                   String      @default("General")
   quantity               Int         @default(1)

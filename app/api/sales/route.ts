@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
 import { splitByWeight } from '@/lib/saleMoney'
-import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef } from '@/lib/orderRefs'
+import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
     if (search) {
       where.OR = [
         { customerName: { contains: search, mode: 'insensitive' } },
+        // phone: match with or without spaces / dashes
+        { customerPhone: { contains: search.replace(/[\s-]/g, '') } },
         { productName: { contains: search, mode: 'insensitive' } },
         { city: { contains: search, mode: 'insensitive' } },
         { address: { contains: search, mode: 'insensitive' } },
@@ -194,6 +196,10 @@ export async function POST(request: NextRequest) {
     if (!customer || !cityName || !addr) {
       return NextResponse.json({ error: 'Customer name, city and address are required.' }, { status: 400 })
     }
+    const customerPhone = cleanPhone(body.customerPhone)
+    if (!customerPhone) {
+      return NextResponse.json({ error: 'Enter a valid customer phone number (e.g. 0300 1234567).' }, { status: 400 })
+    }
 
     const items: {
       productId: string | null
@@ -275,6 +281,7 @@ export async function POST(request: NextRequest) {
             productId: it.productId,
             productName: it.productName,
             customerName: customer,
+            customerPhone,
             address: addr,
             city: cityName,
             quantity: it.quantity,

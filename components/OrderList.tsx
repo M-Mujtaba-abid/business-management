@@ -14,6 +14,7 @@ export interface Sale {
   id: string
   productName: string
   customerName: string
+  customerPhone?: string | null
   address: string
   city: string
   quantity: number
@@ -607,7 +608,7 @@ export default function OrderList({
                     {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
                       <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
                         <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                        <span className="truncate">{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                        <span className="truncate">{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}{sale.customerPhone ? ` · ${sale.customerPhone}` : ''}</span>
                       </div>
                     )}
                   </div>
@@ -713,7 +714,7 @@ export default function OrderList({
                       {(sale.customerName !== 'Walk-in' || sale.city !== 'General') && (
                         <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
                           <MapPin className="h-3 w-3 text-emerald-600 shrink-0" />
-                          <span>{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}</span>
+                          <span>{sale.customerName}{sale.city !== 'General' ? `, ${sale.city}` : ''}{sale.customerPhone ? ` · ${sale.customerPhone}` : ''}</span>
                         </div>
                       )}
                     </td>

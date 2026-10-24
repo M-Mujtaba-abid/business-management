@@ -85,3 +85,15 @@ body {
     animation: none !important;
   }
 }
+
+/* Order photo hover preview: zooms out of the thumbnail */
+@keyframes photo-zoom-in {
+  from { opacity: 0; transform: scale(0.35); }
+  to { opacity: 1; transform: scale(1); }
+}
+.photo-zoom {
+  animation: photo-zoom-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .photo-zoom { animation: none !important; }
+}

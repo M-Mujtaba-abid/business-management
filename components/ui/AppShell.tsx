@@ -306,7 +306,7 @@ export default function AppShell({
         </header>
 
         {/* Dynamic Main Body */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-3 py-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
+        <main className="flex-1 max-w-screen-2xl w-full mx-auto px-3 py-4 sm:px-5 sm:py-5 lg:px-6">
           {children}
         </main>
 

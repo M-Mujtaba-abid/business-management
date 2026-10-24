@@ -131,9 +131,10 @@ export async function GET(request: NextRequest) {
       include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true },
     })
 
-    // How many photos each order has (one query for the whole list).
+    // How many photos each order has + first photo URL for thumbnail.
     // A failure here only hides the photo counts; the orders list must still load.
     const countByOrder = new Map<number, number>()
+    const thumbByOrder = new Map<number, string>()
     const orderNos = Array.from(new Set(sales.map((s) => s.orderNo).filter((n): n is number => n != null)))
     if (orderNos.length) {
       try {
@@ -143,12 +144,25 @@ export async function GET(request: NextRequest) {
           _count: { _all: true },
         })
         photoCounts.forEach((p) => countByOrder.set(p.orderNo, p._count._all))
+
+        // Fetch the first (oldest) photo per order for thumbnails
+        const firstPhotos = await prisma.orderImage.findMany({
+          where: { orderNo: { in: orderNos } },
+          orderBy: { createdAt: 'asc' },
+          distinct: ['orderNo'],
+          select: { orderNo: true, url: true },
+        })
+        firstPhotos.forEach((p) => thumbByOrder.set(p.orderNo, p.url))
       } catch (err) {
         console.error('Photo counts unavailable:', err)
       }
     }
 
-    return NextResponse.json(sales.map((s) => ({ ...s, imageCount: (s.orderNo != null && countByOrder.get(s.orderNo)) || 0 })))
+    return NextResponse.json(sales.map((s) => ({
+      ...s,
+      imageCount: (s.orderNo != null && countByOrder.get(s.orderNo)) || 0,
+      imageUrl: (s.orderNo != null && thumbByOrder.get(s.orderNo)) || null,
+    })))
   } catch (error: any) {
     console.error('Fetch sales error:', error)
     return NextResponse.json({ error: error.message || 'Failed to fetch sales' }, { status: 500 })

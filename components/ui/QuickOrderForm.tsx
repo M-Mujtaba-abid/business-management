@@ -6,6 +6,8 @@ import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
 import { formatDateTime } from '@/lib/format'
+import PhotoPicker from './PhotoPicker'
+import { OrderPhoto, discardOrderPhoto } from '@/lib/photoUpload'
 
 interface ReturnedItem {
   id: string
@@ -104,6 +106,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
 
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
+  const [photos, setPhotos] = useState<OrderPhoto[]>([])
+  const [photosUploading, setPhotosUploading] = useState(false)
   const [showOrderIdField, setShowOrderIdField] = useState(false)
 
   const [isLoadingCityFee, setIsLoadingCityFee] = useState(false)
@@ -180,10 +184,25 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setPaymentSourceId(first.paymentSource?.id || '')
     setReceivedById(first.receivedBy?.id || '')
     setError(null)
+
+    // the order's saved photos
+    setPhotos([])
+    if (first.orderNo) {
+      fetch(`/api/orders/${first.orderNo}/images`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) setPhotos(data.map((p) => ({ id: p.id, url: p.url, publicId: p.publicId, width: p.width, height: p.height })))
+        })
+        .catch(console.error)
+    }
   }, [isOpen, editItems])
 
   const handleClose = () => {
-    if (isEdit) resetForm() // a later "New Order" starts empty
+    if (isEdit) {
+      // photos uploaded during this edit but not saved: remove them from storage
+      photos.filter((p) => !p.id).forEach((p) => discardOrderPhoto(p.publicId))
+      resetForm() // a later "New Order" starts empty
+    }
     onClose()
   }
 
@@ -352,6 +371,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const resetForm = () => {
     setForm(emptyForm)
     setItems([newItem()])
+    setPhotos([])
     setPaymentSourceId('')
     setOrderSourceId('')
     setReceivedById('')
@@ -455,6 +475,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           orderSourceId: orderSourceId && orderSourceId !== OTHER_SOURCE ? orderSourceId : null,
           receivedById: receivedById && receivedById !== OTHER_SOURCE ? receivedById : null,
           expectedAmount: form.expectedAmount || null,
+          images: photos,
         }),
       })
 
@@ -884,6 +905,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
               )}
             </div>
 
+            {/* Optional photos of the order (product, parcel, receipt...) */}
+            <div className="border border-slate-200 rounded-xl p-3 space-y-2">
+              <div className="text-xs font-semibold text-slate-700">Photos (optional)</div>
+              <PhotoPicker photos={photos} onChange={setPhotos} onBusyChange={setPhotosUploading} />
+            </div>
+
           </div>
 
           {/* Right: payment, expenses and the profit summary */}
@@ -1061,11 +1088,13 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           <div className="sticky bottom-0 px-4 sm:px-5 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-100 lg:static lg:col-start-2 lg:px-6 lg:pt-3 lg:pb-5 lg:border-l lg:border-slate-200 lg:bg-slate-50/60">
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || photosUploading}
               className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
             >
               <Check className="h-4 w-4" />
-              {isSubmitting
+              {photosUploading
+                ? 'Uploading photos...'
+                : isSubmitting
                 ? 'Saving...'
                 : isEdit
                 ? `Save changes${isParcel ? ` (${items.length} items)` : ''}`

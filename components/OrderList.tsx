@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown } from 'lucide-react'
+import { Search, Package, MapPin, Calendar, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown, Camera } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import CopyRef from './ui/CopyRef'
 import { formatDateTime } from '@/lib/format'
@@ -43,6 +43,7 @@ export interface Sale {
   orderNo?: number | null
   externalOrderId?: string | null
   trackingNumber?: string | null
+  imageCount?: number // photos attached to the order
   paymentSource?: { id: string; name: string } | null
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
@@ -566,6 +567,11 @@ export default function OrderList({
                       <div className="min-w-0">
                         <div className="flex items-center gap-1 mb-0.5">
                           {sale.orderNo && <span className="text-[11px] font-bold text-slate-500 font-mono">#{sale.orderNo}</span>}
+                          {!!sale.imageCount && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-violet-700" title={`${sale.imageCount} photo(s)`}>
+                              <Camera className="h-3 w-3" />{sale.imageCount}
+                            </span>
+                          )}
                           {g.items.length > 1 && (
                             <span className="inline-block px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold">
                               {g.items.length} items
@@ -683,6 +689,11 @@ export default function OrderList({
                     <td className="px-4 py-3.5 max-w-[280px]">
                       <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                         {sale.orderNo && <span className="text-[11px] font-bold text-slate-500 font-mono shrink-0">#{sale.orderNo}</span>}
+                        {!!sale.imageCount && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-violet-700 shrink-0" title={`${sale.imageCount} photo(s)`}>
+                            <Camera className="h-3 w-3" />{sale.imageCount}
+                          </span>
+                        )}
                         {g.items.length > 1 && (
                           <span className="px-1.5 py-px rounded bg-slate-900 text-white text-[10px] font-bold shrink-0">
                             {g.items.length} items

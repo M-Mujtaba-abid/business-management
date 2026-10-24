@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
 import { cleanRef, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
+import { parseImages } from '@/lib/orderImages'
+import { destroyPhoto } from '@/lib/cloudinary'
+
+// Sentinel: the form did not send a photo list, so photos stay as they are
+const NO_PHOTO_CHANGE: { images: never[] } = { images: [] }
+
+// Makes the order's saved photos match the list from the form: removed ones are deleted
+// (database + Cloudinary), new ones are added. Missing list = photos untouched.
+async function syncPhotos(orderNo: number | null, images: ReturnType<typeof parseImages>) {
+  if (orderNo == null || 'error' in images || images === NO_PHOTO_CHANGE) return
+  const saved = await prisma.orderImage.findMany({ where: { orderNo } })
+  const keep = new Set(images.images.map((i) => i.id).filter(Boolean) as string[])
+  const removed = saved.filter((p) => !keep.has(p.id))
+  const added = images.images.filter((i) => !i.id || !saved.some((p) => p.id === i.id))
+  await prisma.$transaction([
+    prisma.orderImage.deleteMany({ where: { id: { in: removed.map((p) => p.id) } } }),
+    prisma.orderImage.createMany({
+      data: added.map((i) => ({ orderNo, url: i.url, publicId: i.publicId, width: i.width ?? null, height: i.height ?? null })),
+    }),
+  ])
+  await Promise.all(removed.map((p) => destroyPhoto(p.publicId)))
+}
+
 
 interface EditItemInput {
   id?: string // existing product row; missing = new product added to the order
@@ -76,6 +99,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Enter a valid customer phone number (e.g. 0300 1234567).' }, { status: 400 })
     }
 
+    // Photos: only synced when the form sends its list
+    const photos = Array.isArray(body.images) ? parseImages(body.images) : NO_PHOTO_CHANGE
+    if ('error' in photos) return NextResponse.json({ error: photos.error }, { status: 400 })
+
     if (!body.allowDuplicate) {
       const duplicate = await findDuplicateRef(prisma, shared, existing.map((s) => s.id))
       if (duplicate) return NextResponse.json({ error: duplicate, duplicate: true }, { status: 409 })
@@ -99,6 +126,7 @@ export async function PUT(
           })
         )
       )
+      await syncPhotos(lead.orderNo, photos)
       return NextResponse.json({ sales: updated })
     }
 
@@ -253,6 +281,7 @@ export async function PUT(
       return rows
     })
 
+    await syncPhotos(lead.orderNo, photos)
     return NextResponse.json({ parcelId, sales: saved, totalSale: saved.reduce((a, s) => a + saleTotal(s), 0) })
   } catch (error: any) {
     console.error('Edit order error:', error)

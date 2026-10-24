@@ -261,3 +261,16 @@ model CityDeliveryRate {
   deliveryFee Float
   updatedAt   DateTime @updatedAt
 }
+
+// Optional photos of an order (stored on Cloudinary; a parcel's photos share its order number)
+model OrderImage {
+  id        String   @id @default(cuid())
+  orderNo   Int
+  url       String
+  publicId  String
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  @@index([orderNo])
+}

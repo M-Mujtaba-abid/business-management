@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, Sale } from '@prisma/client'
 import { deliveredProfit, splitByWeight } from '@/lib/saleMoney'
+import { destroyPhoto } from '@/lib/cloudinary'
 
 // The order and, if it is part of a parcel, every product delivered / returned with it
 const loadParcel = async (id: string): Promise<Sale[]> => {
@@ -140,6 +141,14 @@ export async function DELETE(
       }
       await tx.sale.deleteMany({ where: { id: { in: sales.map((s) => s.id) } } })
     })
+
+    // The order's photos go with it (database + Cloudinary), unless another row still uses the number
+    const orderNo = sales[0].orderNo
+    if (orderNo != null && !(await prisma.sale.findFirst({ where: { orderNo }, select: { id: true } }))) {
+      const photos = await prisma.orderImage.findMany({ where: { orderNo } })
+      await prisma.orderImage.deleteMany({ where: { orderNo } })
+      await Promise.all(photos.map((p) => destroyPhoto(p.publicId)))
+    }
 
     return NextResponse.json({ success: true, deleted: sales.length })
   } catch (error: any) {

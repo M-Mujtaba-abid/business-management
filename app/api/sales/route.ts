@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment } from '@prisma/client'
 import { splitByWeight } from '@/lib/saleMoney'
+import { parseImages } from '@/lib/orderImages'
 import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 
 export const dynamic = 'force-dynamic'
@@ -130,7 +131,38 @@ export async function GET(request: NextRequest) {
       include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true },
     })
 
-    return NextResponse.json(sales)
+    // How many photos each order has + first photo URL for thumbnail.
+    // A failure here only hides the photo counts; the orders list must still load.
+    const countByOrder = new Map<number, number>()
+    const thumbByOrder = new Map<number, string>()
+    const orderNos = Array.from(new Set(sales.map((s) => s.orderNo).filter((n): n is number => n != null)))
+    if (orderNos.length) {
+      try {
+        const photoCounts = await prisma.orderImage.groupBy({
+          by: ['orderNo'],
+          where: { orderNo: { in: orderNos } },
+          _count: { _all: true },
+        })
+        photoCounts.forEach((p) => countByOrder.set(p.orderNo, p._count._all))
+
+        // Fetch the first (oldest) photo per order for thumbnails
+        const firstPhotos = await prisma.orderImage.findMany({
+          where: { orderNo: { in: orderNos } },
+          orderBy: { createdAt: 'asc' },
+          distinct: ['orderNo'],
+          select: { orderNo: true, url: true },
+        })
+        firstPhotos.forEach((p) => thumbByOrder.set(p.orderNo, p.url))
+      } catch (err) {
+        console.error('Photo counts unavailable:', err)
+      }
+    }
+
+    return NextResponse.json(sales.map((s) => ({
+      ...s,
+      imageCount: (s.orderNo != null && countByOrder.get(s.orderNo)) || 0,
+      imageUrl: (s.orderNo != null && thumbByOrder.get(s.orderNo)) || null,
+    })))
   } catch (error: any) {
     console.error('Fetch sales error:', error)
     return NextResponse.json({ error: error.message || 'Failed to fetch sales' }, { status: 500 })
@@ -180,6 +212,10 @@ export async function POST(request: NextRequest) {
     // Daraz orders need the Daraz order ID, Website orders the Leopards tracking number
     const missingRef = await missingRequiredRef(prisma, orderSourceId, { externalOrderId, trackingNumber })
     if (missingRef) return NextResponse.json({ error: missingRef }, { status: 400 })
+
+    // Optional photos (already uploaded to Cloudinary by the browser)
+    const parsedImages = parseImages(body.images)
+    if ('error' in parsedImages) return NextResponse.json({ error: parsedImages.error }, { status: 400 })
 
     // Same order ID / tracking already saved: ask before saving it twice
     if (!allowDuplicate) {
@@ -318,6 +354,18 @@ export async function POST(request: NextRequest) {
           })
         }
         rows.push(row)
+      }
+
+      if (parsedImages.images.length) {
+        await tx.orderImage.createMany({
+          data: parsedImages.images.map((img) => ({
+            orderNo,
+            url: img.url,
+            publicId: img.publicId,
+            width: img.width ?? null,
+            height: img.height ?? null,
+          })),
+        })
       }
       return rows
     })

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-  X, MapPin, Package, Trash2, CheckCircle2, RotateCcw, XCircle, Wallet, Banknote, Pencil, Truck, Hash, Save, Recycle,
+  X, MapPin, Package, Trash2, Camera, CheckCircle2, RotateCcw, XCircle, Wallet, Banknote, Pencil, Truck, Hash, Save, Recycle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import StatusBadge from './StatusBadge'
@@ -10,6 +10,8 @@ import CopyRef from './CopyRef'
 import { Sale } from '../OrderList'
 import { groupSales } from '@/lib/parcels'
 import { formatDateTime } from '@/lib/format'
+import PhotoPicker from './PhotoPicker'
+import { OrderPhoto, discardOrderPhoto } from '@/lib/photoUpload'
 
 export type { Sale }
 
@@ -55,6 +57,10 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
   const [receivedById, setReceivedById] = useState('')
   const [supplierPaid, setSupplierPaid] = useState<Record<string, boolean>>({})
   const [isSaving, setIsSaving] = useState(false)
+  // order photos: the saved ones, and the list being edited here
+  const [savedPhotos, setSavedPhotos] = useState<OrderPhoto[]>([])
+  const [photos, setPhotos] = useState<OrderPhoto[]>([])
+  const [photosUploading, setPhotosUploading] = useState(false)
 
   useEffect(() => {
     if (!isOpen) return
@@ -90,6 +96,27 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
     setReturnLoss(String(Math.round((group.deliveryCharge + group.petrolCost) * 100) / 100))
   }, [initial, group])
 
+  // Load the order's photos when it opens (or when its data refreshes)
+  const photoOrderNo = isOpen ? group?.lead.orderNo ?? null : null
+  useEffect(() => {
+    setSavedPhotos([])
+    setPhotos([])
+    if (!photoOrderNo) return
+    let cancelled = false
+    fetch(`/api/orders/${photoOrderNo}/images`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !Array.isArray(data)) return
+        const list = data.map((p) => ({ id: p.id, url: p.url, publicId: p.publicId, width: p.width, height: p.height }))
+        setSavedPhotos(list)
+        setPhotos(list)
+      })
+      .catch(console.error)
+    return () => {
+      cancelled = true
+    }
+  }, [photoOrderNo, items])
+
   if (!isOpen || !group || !initial) return null
 
   const lead = group.lead
@@ -104,6 +131,9 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
   const supplierChanges = group.items.filter(
     (i) => i.supplierPaymentStatus !== 'NOT_APPLICABLE' && supplierPaid[i.id] !== initial.supplierPaid[i.id]
   )
+  const photosAdded = photos.filter((p) => !p.id)
+  const photosRemoved = savedPhotos.filter((sp) => !photos.some((p) => p.id === sp.id))
+
   const changes = {
     status: status !== initial.status,
     payStatus: tracksPayment && payStatus !== initial.payStatus,
@@ -112,11 +142,14 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
     supplier: supplierChanges.length > 0,
   }
   const changeCount =
-    Number(changes.status) + Number(changes.payStatus || changes.payAmount) + Number(changes.person) + supplierChanges.length
+    Number(changes.status) + Number(changes.payStatus || changes.payAmount) + Number(changes.person) + supplierChanges.length +
+    photosAdded.length + photosRemoved.length
   const isDirty = changeCount > 0
 
   const handleClose = () => {
     if (isDirty && !confirm('You have unsaved changes. Close without saving?')) return
+    // photos uploaded here but not saved: remove them from storage
+    photosAdded.forEach((p) => discardOrderPhoto(p.publicId))
     onClose()
   }
 
@@ -164,6 +197,11 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
       const toPending = supplierChanges.filter((i) => !supplierPaid[i.id]).map((i) => i.id)
       if (toPaid.length) await call('/api/sales/supplier-payment', 'PATCH', { saleIds: toPaid, status: 'PAID' })
       if (toPending.length) await call('/api/sales/supplier-payment', 'PATCH', { saleIds: toPending, status: 'PENDING' })
+
+      if (lead.orderNo) {
+        for (const p of photosRemoved) await call(`/api/orders/${lead.orderNo}/images/${p.id}`, 'DELETE', {})
+        for (const p of photosAdded) await call(`/api/orders/${lead.orderNo}/images`, 'POST', p)
+      }
 
       toast.success('Changes saved')
       onSaved()
@@ -428,6 +466,19 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
               )}
             </section>
 
+            {/* Photos */}
+            {lead.orderNo && (
+              <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Camera className="h-3.5 w-3.5 text-violet-600" /> Photos
+                  {(photosAdded.length > 0 || photosRemoved.length > 0) && (
+                    <span className="ml-auto text-[10px] normal-case font-semibold text-amber-600">changed</span>
+                  )}
+                </h3>
+                <PhotoPicker photos={photos} onChange={setPhotos} onBusyChange={setPhotosUploading} />
+              </section>
+            )}
+
             {/* Customer + references */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-1">
@@ -491,7 +542,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving || !isDirty}
+              disabled={isSaving || !isDirty || photosUploading}
               className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold flex items-center gap-1.5 transition shadow-lg shadow-emerald-500/20 disabled:opacity-40 disabled:shadow-none"
             >
               <Save className="h-4 w-4" />

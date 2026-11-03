@@ -517,6 +517,16 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                     {formatPKR(group.deliveryCharge)} / {formatPKR(group.petrolCost)} / {formatPKR(group.gstAmount)}
                   </span>
                 </div>
+                {group.deliveryCharge > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">DC paid from</span>
+                    {lead.dcPaidBy?.name ? (
+                      <span className="font-semibold text-slate-700">{lead.dcPaidBy.name}</span>
+                    ) : (
+                      <span className="text-slate-400">— set with Edit</span>
+                    )}
+                  </div>
+                )}
               </section>
             </div>
           </div>

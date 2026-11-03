@@ -244,6 +244,8 @@ export async function PUT(
           supplierPaymentStatus: supplierStatus as 'PAID' | 'PENDING' | 'NOT_APPLICABLE',
           supplierPaidAt,
           deliveryCharge: dcShares[i],
+          // old orders may have no DC person; it stays optional on edit
+          dcPaidById: deliveryTotal > 0 ? body.dcPaidById || null : null,
           petrolCost: petrolShares[i],
           gstAmount: gstShares[i],
           receivedAmount,

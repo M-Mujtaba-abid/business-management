@@ -8,9 +8,10 @@ export const dynamic = 'force-dynamic'
 //  - received:   order money received (actual payout minus cover cost, since the cover cost is owed back to the supplier)
 //  - expenses:   business expenses paid from their money
 //  - withdrawn:  money they took out
-//  - inHand:     received - expenses - withdrawn, all time (what they should be holding now)
+//  - dc:         delivery charges paid from their account (by order date; cancelled orders left out)
+//  - inHand:     received - expenses - withdrawn - dc, all time (what they should be holding now)
 //  - expected:   delivered orders whose money has not come in yet
-// received / expenses / withdrawn are for the selected period; inHand and expected are all time.
+// received / expenses / withdrawn / dc are for the selected period; inHand and expected are all time.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     const inRange = (date: Date | null) =>
       !!date && (!range.gte || date >= range.gte) && (!range.lte || date <= range.lte)
 
-    const [people, received, expected, expenses, withdrawals] = await Promise.all([
+    const [people, received, expected, expenses, withdrawals, dcPaid] = await Promise.all([
       prisma.person.findMany({ orderBy: { name: 'asc' } }),
       prisma.sale.findMany({
         where: { paymentStatus: 'RECEIVED' },
@@ -46,6 +47,10 @@ export async function GET(request: NextRequest) {
       prisma.withdrawal.findMany({
         select: { personId: true, amount: true, createdAt: true },
       }),
+      prisma.sale.findMany({
+        where: { dcPaidById: { not: null }, status: { not: 'CANCELLED' } },
+        select: { id: true, parcelId: true, dcPaidById: true, deliveryCharge: true, createdAt: true },
+      }),
     ])
 
     // Actual payout (edited received amount, else full sale) minus the cover cost owed to the supplier
@@ -61,6 +66,8 @@ export async function GET(request: NextRequest) {
       const spentInPeriod = spent.filter((e) => inRange(e.createdAt))
       const taken = id ? withdrawals.filter((w) => w.personId === id) : []
       const takenInPeriod = taken.filter((w) => inRange(w.createdAt))
+      const dc = id ? dcPaid.filter((s) => s.dcPaidById === id) : []
+      const dcInPeriod = dc.filter((s) => inRange(s.createdAt))
 
       return {
         id,
@@ -71,7 +78,13 @@ export async function GET(request: NextRequest) {
         expensesCount: spentInPeriod.length,
         withdrawnAmount: sum(takenInPeriod.map((w) => w.amount)),
         withdrawnCount: takenInPeriod.length,
-        inHand: sum(got.map(net)) - sum(spent.map((e) => e.amount)) - sum(taken.map((w) => w.amount)),
+        dcAmount: sum(dcInPeriod.map((s) => s.deliveryCharge)),
+        dcCount: countOrders(dcInPeriod),
+        inHand:
+          sum(got.map(net)) -
+          sum(spent.map((e) => e.amount)) -
+          sum(taken.map((w) => w.amount)) -
+          sum(dc.map((s) => s.deliveryCharge)),
         expectedAmount: sum(coming.map(net)),
         expectedCount: countOrders(coming),
       }

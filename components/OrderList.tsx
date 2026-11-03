@@ -48,6 +48,7 @@ export interface Sale {
   paymentSource?: { id: string; name: string } | null
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
+  dcPaidBy?: { id: string; name: string } | null
 }
 
 export interface OrderFilters {

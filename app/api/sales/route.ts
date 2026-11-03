@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
     const sales = await prisma.sale.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true },
+      include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true, dcPaidBy: true },
     })
 
     // How many photos each order has + first photo URL for thumbnail.
@@ -200,6 +200,7 @@ export async function POST(request: NextRequest) {
       paymentSourceId,
       orderSourceId,
       receivedById,
+      dcPaidById,
       expectedAmount,
       allowDuplicate,
     } = body
@@ -275,6 +276,10 @@ export async function POST(request: NextRequest) {
     }
 
     const delivery_num = parseFloat(deliveryCharge) || 0
+    // A paid DC must say whose account it came out of
+    if (delivery_num > 0 && !dcPaidById) {
+      return NextResponse.json({ error: 'Select whose account the delivery charge (DC) was paid from.' }, { status: 400 })
+    }
     const weights = items.map((i) => i.soldPrice * i.quantity)
     const dcShares = splitByWeight(delivery_num, weights)
     const petrolShares = splitByWeight(parseFloat(petrolCost) || 0, weights)
@@ -335,6 +340,7 @@ export async function POST(request: NextRequest) {
             orderSourceId: orderSourceId || null,
             receivedAmount: payout !== null && Math.abs(payout - saleTotal) >= 0.005 ? payout : null,
             receivedById: receivedById || null,
+            dcPaidById: delivery_num > 0 ? dcPaidById : null,
             parcelId,
             orderNo,
             externalOrderId,

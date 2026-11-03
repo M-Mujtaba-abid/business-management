@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useState, useEffect } from 'react'
-import { Camera, X, Loader2 } from 'lucide-react'
+import { Camera, ImagePlus, X, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { OrderPhoto, uploadOrderPhoto, discardOrderPhoto, photoThumb } from '@/lib/photoUpload'
 import PhotoViewer from './PhotoViewer'
@@ -18,6 +18,7 @@ interface PhotoPickerProps {
 // the photos are attached to the order when the order is saved.
 export default function PhotoPicker({ photos, onChange, max = 5, disabled, onBusyChange }: PhotoPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(0)
   const [viewing, setViewing] = useState<number | null>(null)
   const room = max - photos.length - uploading
@@ -44,6 +45,7 @@ export default function PhotoPicker({ photos, onChange, max = 5, disabled, onBus
       }
     }
     if (inputRef.current) inputRef.current.value = ''
+    if (cameraRef.current) cameraRef.current.value = ''
   }
 
   const remove = (photo: OrderPhoto) => {
@@ -85,14 +87,24 @@ export default function PhotoPicker({ photos, onChange, max = 5, disabled, onBus
         ))}
 
         {!disabled && room > 0 && (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="aspect-square rounded-lg border-2 border-dashed border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 flex flex-col items-center justify-center gap-0.5 transition"
-          >
-            <Camera className="h-5 w-5" />
-            <span className="text-[10px] font-semibold">Add photo</span>
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              className="aspect-square rounded-lg border-2 border-dashed border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 flex flex-col items-center justify-center gap-0.5 transition"
+            >
+              <Camera className="h-5 w-5" />
+              <span className="text-[10px] font-semibold">Camera</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="aspect-square rounded-lg border-2 border-dashed border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 flex flex-col items-center justify-center gap-0.5 transition"
+            >
+              <ImagePlus className="h-5 w-5" />
+              <span className="text-[10px] font-semibold">Gallery</span>
+            </button>
+          </>
         )}
       </div>
 
@@ -105,6 +117,15 @@ export default function PhotoPicker({ photos, onChange, max = 5, disabled, onBus
         type="file"
         accept="image/*"
         multiple
+        className="hidden"
+        onChange={(e) => handleFiles(e.target.files)}
+      />
+      {/* Android's photo picker (used for `multiple` inputs) has no camera option, so the camera gets its own input */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
       />

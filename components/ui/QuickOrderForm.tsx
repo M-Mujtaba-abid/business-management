@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
 import { formatDateTime } from '@/lib/format'
+import { oldestOrderDate } from '@/lib/orderRefs'
 import PhotoPicker from './PhotoPicker'
 import { OrderPhoto, discardOrderPhoto } from '@/lib/photoUpload'
 
@@ -97,6 +98,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const [people, setPeople] = useState<SelectOption[]>([])
   // person id, or OTHER_SOURCE while picking/creating a new one
   const [receivedById, setReceivedById] = useState('')
+  // person whose account the DC is paid from
+  const [dcPaidById, setDcPaidById] = useState('')
   const [orderSources, setOrderSources] = useState<SelectOption[]>([])
   // order source id, or OTHER_SOURCE while picking/creating a new one
   const [orderSourceId, setOrderSourceId] = useState('')
@@ -141,6 +144,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setForm((prev) => ({ ...prev, orderDate: toLocalInput(new Date()) }))
   }, [isOpen, editItems])
 
+  // New order: DC is usually paid from the same account the money goes to
+  useEffect(() => {
+    if (isEdit || dcPaidById || !receivedById || receivedById === OTHER_SOURCE) return
+    setDcPaidById(receivedById)
+  }, [isEdit, receivedById]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Edit mode: fill the form from the saved order
   useEffect(() => {
     if (!isOpen || !editItems || editItems.length === 0) return
@@ -183,6 +192,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setOrderSourceId(first.orderSource?.id || '')
     setPaymentSourceId(first.paymentSource?.id || '')
     setReceivedById(first.receivedBy?.id || '')
+    setDcPaidById(first.dcPaidBy?.id || '')
     setError(null)
 
     // the order's saved photos
@@ -375,6 +385,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setPaymentSourceId('')
     setOrderSourceId('')
     setReceivedById('')
+    setDcPaidById('')
     setShowOrderIdField(false)
     setError(null)
   }
@@ -402,6 +413,13 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       setError('Order date cannot be in the future.')
       return
     }
+    if (
+      new Date(form.orderDate).getTime() < oldestOrderDate().getTime() &&
+      !(isEdit && lead && form.orderDate === toLocalInput(new Date(lead.createdAt)))
+    ) {
+      setError('Order date is more than a year ago. Check the year.')
+      return
+    }
 
     if (!form.customerName.trim() || !form.city.trim() || !form.address.trim()) {
       setError('Customer name, city and address are required.')
@@ -423,6 +441,12 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
         setError(`${label}select an item from returned stock.`)
         return
       }
+    }
+
+    // A new order's DC must say whose account it came out of (old orders may have none)
+    if (!isEdit && (parseFloat(form.deliveryCharge) || 0) > 0 && !dcPaidById) {
+      setError('Select whose account the DC was paid from.')
+      return
     }
 
     if (isEdit && !moneyLocked) {
@@ -474,6 +498,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           paymentSourceId: paymentSourceId && paymentSourceId !== OTHER_SOURCE ? paymentSourceId : null,
           orderSourceId: orderSourceId && orderSourceId !== OTHER_SOURCE ? orderSourceId : null,
           receivedById: receivedById && receivedById !== OTHER_SOURCE ? receivedById : null,
+          dcPaidById: dcPaidById || null,
           expectedAmount: form.expectedAmount || null,
           images: photos,
         }),
@@ -629,6 +654,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
               <input
                 type="datetime-local"
                 value={form.orderDate}
+                min={isEdit ? undefined : toLocalInput(oldestOrderDate())}
                 max={toLocalInput(new Date())}
                 onChange={(e) => set('orderDate', e.target.value)}
                 className={inputClass}
@@ -1052,6 +1078,29 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                   />
                 </div>
               </div>
+
+              {/* Whose account the DC is paid from */}
+              {dc > 0 && (
+                <div className="mt-2">
+                  <label className={labelClass}>DC paid from{!isEdit && ' *'}</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {people.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setDcPaidById(dcPaidById === p.id ? '' : p.id)}
+                        className={chipClass(dcPaidById === p.id)}
+                      >
+                        {dcPaidById === p.id && <Check className="h-3.5 w-3.5" />}
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {formatPKR(dc)} is taken out of this person&apos;s money in hand.
+                  </p>
+                </div>
+              )}
             </fieldset>
 
             {/* Live summary */}

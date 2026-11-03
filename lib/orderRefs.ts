@@ -45,12 +45,21 @@ export async function findDuplicateRef(
 }
 
 // Order date sent by the form (ISO with timezone). Undefined = not sent / keep; Error message when invalid.
+// Earliest order date allowed when adding / back-dating an order
+export const oldestOrderDate = () => {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 1)
+  return d
+}
+
 export const parseOrderDate = (v: unknown): Date | undefined | string => {
   if (v === undefined || v === null || v === '') return undefined
   const d = new Date(String(v))
   if (isNaN(d.getTime())) return 'Order date is not valid.'
   // allow a little clock drift, but not orders dated in the future
   if (d.getTime() > Date.now() + 5 * 60 * 1000) return 'Order date cannot be in the future.'
+  // a wrong year (typo / autofill) would bury the order at the end of the list
+  if (d.getTime() < oldestOrderDate().getTime()) return 'Order date is more than a year ago. Check the year.'
   return d
 }
 

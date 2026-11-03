@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History } from 'lucide-react'
+import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History, ChevronDown, Truck } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDateTime } from '@/lib/format'
 
 interface PersonSummary {
   id: string | null
@@ -13,6 +14,8 @@ interface PersonSummary {
   expensesCount: number
   withdrawnAmount: number
   withdrawnCount: number
+  dcAmount: number
+  dcCount: number
   inHand: number
   expectedAmount: number
   expectedCount: number
@@ -23,6 +26,17 @@ interface Withdrawal {
   personId: string
   amount: number
   reason: string | null
+  createdAt: string
+}
+
+// One order's delivery charge paid from a person's account
+interface DcEntry {
+  orderNo: number | null
+  externalOrderId: string | null
+  trackingNumber: string | null
+  customerName: string
+  dc: number
+  status: string
   createdAt: string
 }
 
@@ -73,8 +87,25 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
   const [wReason, setWReason] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [historyFor, setHistoryFor] = useState<string | null>(null)
+  const [dcLogFor, setDcLogFor] = useState<string | null>(null)
+  const [dcLog, setDcLog] = useState<DcEntry[]>([])
+  const [dcLogLoading, setDcLogLoading] = useState(false)
 
   const { from, to } = period === 'custom' ? { from: customFrom, to: customTo } : periodRange(period)
+
+  // DC log of the open person, for the selected period
+  useEffect(() => {
+    if (!dcLogFor) return
+    setDcLogLoading(true)
+    const params = new URLSearchParams({ personId: dcLogFor })
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+    fetch(`/api/people/dc-log?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => setDcLog(Array.isArray(data) ? data : []))
+      .catch(console.error)
+      .finally(() => setDcLogLoading(false))
+  }, [dcLogFor, from, to])
 
   const fetchAll = useCallback(() => {
     setIsLoading(true)
@@ -155,7 +186,7 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
             <Users className="h-5 w-5 text-violet-600" /> Money with each person
           </h2>
           <p className="text-xs text-slate-500">
-            Order money received (sale − cover cost), minus expenses paid and withdrawals
+            Order money received (sale − cover cost), minus DC, expenses paid and withdrawals
           </p>
         </div>
 
@@ -240,7 +271,53 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                       <span className="text-slate-600">Withdrawn ({p.withdrawnCount})</span>
                       <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.withdrawnAmount)}</span>
                     </div>
+                    {p.id && (
+                      <button
+                        type="button"
+                        onClick={() => setDcLogFor(dcLogFor === p.id ? null : p.id)}
+                        className="w-full flex justify-between hover:bg-violet-50 rounded -mx-1 px-1"
+                        title="Show DC log"
+                      >
+                        <span className="text-slate-600 flex items-center gap-1">
+                          DC paid ({p.dcCount} orders)
+                          <ChevronDown className={`h-3 w-3 transition ${dcLogFor === p.id ? 'rotate-180' : ''}`} />
+                        </span>
+                        <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.dcAmount)}</span>
+                      </button>
+                    )}
                   </div>
+
+                  {/* DC log for the period */}
+                  {p.id && dcLogFor === p.id && (
+                    <div className="rounded-lg bg-white border border-slate-200 p-2.5 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                        <Truck className="h-3.5 w-3.5" /> DC log · {periodLabel}
+                      </div>
+                      {dcLogLoading ? (
+                        <p className="text-xs text-slate-400">Loading...</p>
+                      ) : dcLog.length === 0 ? (
+                        <p className="text-xs text-slate-400">No DC paid in this period.</p>
+                      ) : (
+                        <div className="max-h-60 overflow-y-auto space-y-1.5">
+                          {dcLog.map((d, i) => (
+                            <div key={`${d.orderNo}-${i}`} className="flex items-start justify-between gap-2 text-xs">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-800">
+                                  {d.orderNo ? `#${d.orderNo}` : 'Order'}
+                                  {d.status === 'RETURNED' && <span className="ml-1 text-[10px] font-semibold text-amber-600">Returned</span>}
+                                </div>
+                                <div className="text-[11px] text-slate-500 truncate">
+                                  {formatDateTime(d.createdAt)}
+                                  {d.externalOrderId || d.trackingNumber ? ` · ${d.externalOrderId || d.trackingNumber}` : ''}
+                                </div>
+                              </div>
+                              <div className="font-mono font-semibold text-rose-600 whitespace-nowrap">− {formatPKR(d.dc)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="text-xs text-slate-600">
                     Still to come: <b className="font-mono">{formatPKR(p.expectedAmount)}</b>{' '}

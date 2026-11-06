@@ -25,7 +25,7 @@ export interface Sale {
   gstAmount: number
   returnLoss: number
   profit: number
-  status: 'DISPATCHED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED'
+  status: 'PACKING' | 'DISPATCHED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED'
   deductDeliveryOnReturn: boolean
   supplierPaymentStatus: SupplierPaymentStatus
   supplierPaidAt?: string | null
@@ -373,6 +373,7 @@ export default function OrderList({
 
   const statusTabs = [
     { label: 'All', value: 'ALL', dot: '' },
+    { label: 'Packing', value: 'PACKING', dot: 'bg-amber-500' },
     { label: 'Dispatched', value: 'DISPATCHED', dot: 'bg-blue-500' },
     { label: 'Delivered', value: 'DELIVERED', dot: 'bg-emerald-500' },
     { label: 'Returned', value: 'RETURNED', dot: 'bg-rose-500' },

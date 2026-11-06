@@ -16,6 +16,7 @@ import {
   Banknote,
   Activity,
   CheckCircle2,
+  Package,
 } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import { Sale, SupplierPayBadge, PaymentBadge } from './OrderList'
@@ -53,6 +54,7 @@ interface StatsProps {
     trueNetProfit: number
     totalExpensesCombined: number
     activeDispatches: number
+    packingCount?: number
     totalOrdersCount: number
     partners: Partner[]
     totalSupplierDebt: number
@@ -194,6 +196,8 @@ export default function DashboardStats({
   const toReceiveCount = stats.receivablePendingCount || 0
   const hasToReceive = toReceive > 0
   const hasActiveDispatches = stats.activeDispatches > 0
+  const packingCount = stats.packingCount || 0
+  const hasPacking = packingCount > 0
   const hasSupplierPending = supplierPending > 0
   const hasReturnedStock = returnedItemsCount > 0
   const change = stats.salesChangePct
@@ -299,8 +303,10 @@ export default function DashboardStats({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs text-slate-500">Active Orders</div>
-              <Count value={stats.activeDispatches} className="block text-xl font-bold text-slate-900" />
-              <div className="text-[11px] text-slate-400">{stats.totalOrdersCount} total</div>
+              <Count value={stats.activeDispatches + packingCount} className="block text-xl font-bold text-slate-900" />
+              <div className="text-[11px] text-slate-400">
+                {hasPacking ? `${packingCount} packing · ` : ''}{stats.totalOrdersCount} total
+              </div>
             </div>
             <MiniBars values={series.orders} color={C.blue} />
           </div>
@@ -412,13 +418,25 @@ export default function DashboardStats({
             <AlertTriangle className="h-4 w-4 text-amber-500" /> Needs attention
           </h3>
 
-          {!hasActiveDispatches && !hasSupplierPending && !hasReturnedStock && !hasToReceive ? (
+          {!hasPacking && !hasActiveDispatches && !hasSupplierPending && !hasReturnedStock && !hasToReceive ? (
             <div className="flex flex-col items-center text-center py-6 text-slate-500">
               <CheckCircle2 className="h-8 w-8 text-emerald-500 mb-2" />
               <p className="text-sm">All clear. Nothing needs attention.</p>
             </div>
           ) : (
             <div className="space-y-2">
+              {hasPacking && (
+                <button
+                  onClick={onViewAllOrders}
+                  className="w-full text-left flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs hover:border-amber-300 transition"
+                >
+                  <span className="flex items-center gap-2 text-amber-900 min-w-0">
+                    <Package className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span className="truncate"><b>{packingCount}</b> order(s) still packing, not dispatched</span>
+                  </span>
+                  <span className="font-semibold text-amber-700 underline shrink-0">Review</span>
+                </button>
+              )}
               {hasActiveDispatches && (
                 <button
                   onClick={onViewAllOrders}

@@ -100,6 +100,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const [receivedById, setReceivedById] = useState('')
   // person whose account the DC is paid from
   const [dcPaidById, setDcPaidById] = useState('')
+  // new order only: Packing (default) or already Dispatched
+  const [startStatus, setStartStatus] = useState<'PACKING' | 'DISPATCHED'>('PACKING')
   const [orderSources, setOrderSources] = useState<SelectOption[]>([])
   // order source id, or OTHER_SOURCE while picking/creating a new one
   const [orderSourceId, setOrderSourceId] = useState('')
@@ -386,6 +388,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     setOrderSourceId('')
     setReceivedById('')
     setDcPaidById('')
+    setStartStatus('PACKING')
     setShowOrderIdField(false)
     setError(null)
   }
@@ -499,6 +502,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           orderSourceId: orderSourceId && orderSourceId !== OTHER_SOURCE ? orderSourceId : null,
           receivedById: receivedById && receivedById !== OTHER_SOURCE ? receivedById : null,
           dcPaidById: dcPaidById || null,
+          ...(isEdit ? {} : { status: startStatus }),
           expectedAmount: form.expectedAmount || null,
           images: photos,
         }),
@@ -998,6 +1002,22 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                   : 'Leave blank if the full sale amount will come. You can change it when the payment arrives.'}
               </p>
             </div>
+
+            {/* New order: where it stands right now */}
+            {!isEdit && (
+              <div>
+                <label className={labelClass}>Status</label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => setStartStatus('PACKING')} className={chipClass(startStatus === 'PACKING')}>
+                    <Package className="h-3.5 w-3.5" /> Packing
+                  </button>
+                  <button type="button" onClick={() => setStartStatus('DISPATCHED')} className={chipClass(startStatus === 'DISPATCHED')}>
+                    <Truck className="h-3.5 w-3.5" /> Dispatched
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">Change it later from order details when the parcel leaves.</p>
+              </div>
+            )}
 
             {/* Whose account the money lands in */}
             <div>

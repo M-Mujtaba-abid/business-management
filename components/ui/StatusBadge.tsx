@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { CheckCircle2, RotateCcw, XCircle, Truck, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, RotateCcw, XCircle, Truck, AlertTriangle, Package } from 'lucide-react'
 
 interface StatusBadgeProps {
   status: string
@@ -36,6 +36,13 @@ export default function StatusBadge({ status, type = 'order', qty }: StatusBadge
   }
 
   switch (status) {
+    case 'PACKING':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap bg-amber-500/10 text-amber-600 border border-amber-500/20">
+          <Package className="h-3 w-3" />
+          <span>Packing</span>
+        </span>
+      )
     case 'DELIVERED':
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">

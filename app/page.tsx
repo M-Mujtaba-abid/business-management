@@ -43,6 +43,7 @@ export default function Home() {
     trueNetProfit: 0,
     totalExpensesCombined: 0,
     activeDispatches: 0,
+    packingCount: 0,
     totalOrdersCount: 0,
     partners: [],
     totalSupplierDebt: 0,

@@ -32,6 +32,7 @@ interface OrderDetailsDrawerProps {
 const formatPKR = (amt: number) => `Rs. ${Math.round(amt).toLocaleString()}`
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string; icon: typeof Truck; active: string }[] = [
+  { value: 'PACKING', label: 'Packing', icon: Package, active: 'bg-amber-500 text-white border-amber-500' },
   { value: 'DISPATCHED', label: 'Dispatched', icon: Truck, active: 'bg-blue-500 text-white border-blue-500' },
   { value: 'DELIVERED', label: 'Delivered', icon: CheckCircle2, active: 'bg-emerald-500 text-white border-emerald-500' },
   { value: 'RETURNED', label: 'Returned', icon: RotateCcw, active: 'bg-rose-500 text-white border-rose-500' },
@@ -295,7 +296,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                 <Truck className="h-3.5 w-3.5 text-blue-600" /> Order status
                 {changes.status && <span className="ml-auto text-[10px] normal-case font-semibold text-amber-600">changed</span>}
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 {STATUS_OPTIONS.map((o) => {
                   const Icon = o.icon
                   return (

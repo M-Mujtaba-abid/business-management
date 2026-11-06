@@ -206,6 +206,8 @@ export async function POST(request: NextRequest) {
     } = body
     const externalOrderId = cleanRef(body.externalOrderId)
     const trackingNumber = cleanRef(body.trackingNumber)
+    // A new order starts as Packing, or Dispatched if it already left
+    const startStatus = body.status === 'DISPATCHED' ? 'DISPATCHED' : 'PACKING'
     // When the order was taken (defaults to now); can be set to an earlier date
     const orderDate = parseOrderDate(body.orderDate)
     if (typeof orderDate === 'string') return NextResponse.json({ error: orderDate }, { status: 400 })
@@ -316,7 +318,7 @@ export async function POST(request: NextRequest) {
         const saleTotal = it.soldPrice * it.quantity
         const payout = payoutShares ? payoutShares[i] : null
 
-        // Default status is DISPATCHED. Profit realized = 0 while pending dispatch.
+        // Starts as Packing (or Dispatched). Profit realized = 0 until delivered.
         const row = await tx.sale.create({
           data: {
             productId: it.productId,
@@ -348,7 +350,7 @@ export async function POST(request: NextRequest) {
             ...(orderDate ? { createdAt: orderDate } : {}),
             paymentStatus: 'NOT_RECEIVED',
             profit: 0,
-            status: 'DISPATCHED',
+            status: startStatus,
             deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
           },
         })

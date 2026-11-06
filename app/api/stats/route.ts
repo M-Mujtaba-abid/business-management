@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
     // A returned order's profit is stored as -(loss), for old and new orders alike
     const returnLoss = sales.filter((s) => s.status === 'RETURNED' && s.profit < 0).reduce((acc, s) => acc - s.profit, 0)
     const activeDispatches = countOrders(sales.filter((s) => s.status === 'DISPATCHED'))
+    const packingCount = countOrders(sales.filter((s) => s.status === 'PACKING'))
     const generalExpenses = expenses.reduce((acc, e) => acc + (e._sum.amount || 0), 0)
     const trueNetProfit = grossProfit - returnLoss - generalExpenses
 
@@ -169,6 +170,7 @@ export async function GET(request: NextRequest) {
       trueNetProfit,
       totalExpensesCombined: generalExpenses + returnLoss,
       activeDispatches,
+      packingCount,
       totalOrdersCount: countOrders(sales),
       expenseBreakdown,
       trend,

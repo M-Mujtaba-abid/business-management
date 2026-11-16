@@ -5,6 +5,10 @@ import { createPortal } from 'react-dom'
 import { Search, Package, MapPin, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown, Camera, Pencil, Phone, X } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import CopyRef from './ui/CopyRef'
+import { CustomerReplyBadge, WhatsAppMsgStatus, BillStatus, CustomerResponse, WhatsAppMsg } from './ui/WhatsAppStatus'
+import { WhatsAppChatButton } from './WhatsAppChat'
+import ReturnReceivedToggle from './ui/ReturnReceivedToggle'
+import { BillButton } from './BillDialog'
 import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
@@ -49,6 +53,12 @@ export interface Sale {
   orderSource?: { id: string; name: string } | null
   receivedBy?: { id: string; name: string } | null
   dcPaidBy?: { id: string; name: string } | null
+  customerResponse?: CustomerResponse // WhatsApp confirm / cancel reply
+  customerRespondedAt?: string | null
+  whatsapp?: WhatsAppMsg[] // WhatsApp messages sent for the order
+  returnedAt?: string | null // when it was marked Returned
+  returnReceived?: boolean // returned parcel physically back with us
+  returnReceivedAt?: string | null
 }
 
 export interface OrderFilters {
@@ -61,6 +71,8 @@ export interface OrderFilters {
   olderThanDays: string // '' | '15'
   paymentSourceId: string // '' | source id | 'none'
   paymentStatus: string // '' | 'NOT_RECEIVED' | 'RECEIVED'
+  customerResponse: string // '' | 'PENDING' | 'CONFIRMED' | 'CANCELLED' (WhatsApp reply)
+  returnState: string // '' | 'PENDING' (returned, parcel not back yet) | 'RECEIVED'
 }
 
 export const EMPTY_ORDER_FILTERS: OrderFilters = {
@@ -73,6 +85,8 @@ export const EMPTY_ORDER_FILTERS: OrderFilters = {
   olderThanDays: '',
   paymentSourceId: '',
   paymentStatus: '',
+  customerResponse: '',
+  returnState: '',
 }
 
 interface Option {
@@ -100,6 +114,7 @@ interface OrderListProps {
   onReceivePayment: (sale: Sale) => void // opens the "actual amount received" popup
   onEditOrder: (items: Sale[]) => void // opens the order form in edit mode
   onSelectOrder: (sale: Sale) => void
+  onChanged?: () => void // reload after a WhatsApp resend
 }
 
 // Money we receive for the order (from Daraz, courier COD, etc.)
@@ -294,6 +309,7 @@ export default function OrderList({
   onReceivePayment,
   onEditOrder,
   onSelectOrder,
+  onChanged,
 }: OrderListProps) {
   const formatPKR = (amt: number) => `Rs. ${Math.round(amt).toLocaleString()}`
 
@@ -528,6 +544,30 @@ export default function OrderList({
               >
                 Missing tracking / ID
               </button>
+              <button
+                onClick={() => setFilters({ ...filters, customerResponse: filters.customerResponse === 'CANCELLED' ? '' : 'CANCELLED' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                  filters.customerResponse === 'CANCELLED' ? 'bg-rose-500/15 text-rose-700 border-rose-500/40' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Customer cancelled (WhatsApp)
+              </button>
+              <button
+                onClick={() => setFilters({ ...filters, customerResponse: filters.customerResponse === 'PENDING' ? '' : 'PENDING' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                  filters.customerResponse === 'PENDING' ? 'bg-amber-500/15 text-amber-700 border-amber-500/40' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Awaiting customer reply
+              </button>
+              <button
+                onClick={() => setFilters({ ...filters, returnState: filters.returnState === 'PENDING' ? '' : 'PENDING' })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                  filters.returnState === 'PENDING' ? 'bg-amber-500/15 text-amber-700 border-amber-500/40' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Return not received yet
+              </button>
               {hasFilters && (
                 <button
                   onClick={() => setFilters(EMPTY_ORDER_FILTERS)}
@@ -664,6 +704,16 @@ export default function OrderList({
                           </div>
                         )}
                         {customerLine(sale)}
+                        {(sale.customerResponse && sale.customerResponse !== 'NONE') || sale.whatsapp?.length ? (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <CustomerReplyBadge response={sale.customerResponse} at={sale.customerRespondedAt} />
+                            <WhatsAppMsgStatus orderNo={sale.orderNo} orderStatus={sale.status} messages={sale.whatsapp} onChanged={onChanged} />
+                            <BillStatus messages={sale.whatsapp} />
+                            {!!sale.whatsapp?.length && (
+                              <WhatsAppChatButton phone={sale.customerPhone} customerName={sale.customerName} orderNo={sale.orderNo} />
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
@@ -671,6 +721,16 @@ export default function OrderList({
                       <div className="space-y-1 min-w-0">
                         <div className="text-[10px] text-slate-400 uppercase font-medium tracking-wide">Status</div>
                         <StatusBadge status={sale.status} />
+                        {sale.status === 'RETURNED' && (
+                          <ReturnReceivedToggle
+                            compact
+                            saleId={sale.id}
+                            received={sale.returnReceived}
+                            returnedAt={sale.returnedAt}
+                            receivedAt={sale.returnReceivedAt}
+                            onChanged={onChanged}
+                          />
+                        )}
                       </div>
                       <div className="space-y-1 min-w-0">
                         <div className="text-[10px] text-slate-400 uppercase font-medium tracking-wide truncate">
@@ -692,6 +752,9 @@ export default function OrderList({
                       >
                         <Pencil className="h-3 w-3" /> Edit
                       </button>
+                      <div className="flex-1 flex [&>button]:flex-1 [&>button]:py-2 [&>button]:rounded-xl [&>button]:text-[11px]">
+                        <BillButton sale={sale} variant="full" />
+                      </div>
                     </div>
                   </div>
                 )
@@ -700,15 +763,16 @@ export default function OrderList({
 
             {/* ── Desktop: table (photo · date · order · amount · status · payment · supplier) ── */}
             <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[880px] table-fixed text-left text-xs text-slate-700">
+              <table className="w-full min-w-[1040px] table-fixed text-left text-xs text-slate-700">
                 {/* fixed widths keep the right-side columns compact so Edit stays visible without scrolling */}
                 <colgroup>
                   <col className="w-9" />
                   <col className="w-[80px]" />
                   <col className="w-[92px]" />
                   <col />
+                  <col className="w-[150px]" />
                   <col className="w-[100px]" />
-                  <col className="w-[112px]" />
+                  <col className="w-[128px]" />
                   <col className="w-[124px]" />
                   <col className="w-[100px]" />
                   <col className="w-[48px]" />
@@ -727,6 +791,7 @@ export default function OrderList({
                     <th className="px-2 py-2.5">Photo</th>
                     <th className="px-2 py-2.5">Date</th>
                     <th className="px-3 py-2.5">Order</th>
+                    <th className="px-2 py-2.5">WhatsApp</th>
                     <th className="px-2 py-2.5">Amount</th>
                     <th className="px-2 py-2.5">Status</th>
                     <th className="px-2 py-2.5">Payment</th>
@@ -799,6 +864,24 @@ export default function OrderList({
                           <div className="mt-0.5">{customerLine(sale)}</div>
                         </td>
 
+                        {/* WhatsApp: customer reply, last message, chat */}
+                        <td className="px-2 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
+                          {(sale.customerResponse && sale.customerResponse !== 'NONE') || !!sale.whatsapp?.length ? (
+                            <div className="flex flex-col items-start gap-1 min-w-0">
+                              <CustomerReplyBadge response={sale.customerResponse} at={sale.customerRespondedAt} />
+                              <div className="max-w-full overflow-hidden">
+                                <WhatsAppMsgStatus orderNo={sale.orderNo} orderStatus={sale.status} messages={sale.whatsapp} onChanged={onChanged} />
+                              </div>
+                              <BillStatus messages={sale.whatsapp} />
+                              {!!sale.whatsapp?.length && (
+                                <WhatsAppChatButton phone={sale.customerPhone} customerName={sale.customerName} orderNo={sale.orderNo} />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+
                         {/* Amount */}
                         <td className="px-2 py-2.5 font-mono whitespace-nowrap">
                           <div className="text-[13px] font-bold text-slate-900">{formatPKR(g.saleTotal)}</div>
@@ -806,8 +889,22 @@ export default function OrderList({
                         </td>
 
                         {/* Status */}
-                        <td className="px-2 py-2.5">
-                          <StatusBadge status={sale.status} />
+                        <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-col items-start gap-1 min-w-0" onClick={() => onSelectOrder(sale)}>
+                            <StatusBadge status={sale.status} />
+                          </div>
+                          {sale.status === 'RETURNED' && (
+                            <div className="mt-1">
+                              <ReturnReceivedToggle
+                                compact
+                                saleId={sale.id}
+                                received={sale.returnReceived}
+                                returnedAt={sale.returnedAt}
+                                receivedAt={sale.returnReceivedAt}
+                                onChanged={onChanged}
+                              />
+                            </div>
+                          )}
                         </td>
 
                         {/* Payment: source → person, received or not */}
@@ -827,7 +924,7 @@ export default function OrderList({
 
                         {/* Actions */}
                         <td className="pr-3 pl-1 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1.5 opacity-70 group-hover/row:opacity-100 transition-opacity">
+                          <div className="flex flex-col items-end gap-1.5 opacity-70 group-hover/row:opacity-100 transition-opacity">
                             <button
                               onClick={() => onEditOrder(g.items)}
                               className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200/60 text-blue-600 transition"
@@ -835,6 +932,7 @@ export default function OrderList({
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
+                            <BillButton sale={sale} />
                           </div>
                         </td>
                       </tr>

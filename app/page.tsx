@@ -20,6 +20,8 @@ import MarkReturnedModal from '@/components/MarkReturnedModal'
 import ReceivePaymentModal from '@/components/ReceivePaymentModal'
 import ExpensesTab from '@/components/ExpensesTab'
 import CityRatesTab from '@/components/CityRatesTab'
+import WhatsAppPage from '@/components/WhatsAppPage'
+import WhatsAppSwitches from '@/components/WhatsAppSwitches'
 // import LedgerTab from '@/components/LedgerTab' // PARTNERS LEDGER — uncomment to restore
 import { Toaster, toast } from 'sonner'
 
@@ -114,6 +116,8 @@ export default function Home() {
       if (orderFilters.orderSourceId) url += `&orderSourceId=${orderFilters.orderSourceId}`
       if (orderFilters.paymentSourceId) url += `&paymentSourceId=${orderFilters.paymentSourceId}`
       if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
+      if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
+      if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
@@ -125,6 +129,54 @@ export default function Home() {
       setIsSalesLoading(false)
     }
   }, [dateRange, statusFilter, searchQuery, startDate, endDate, orderFilters])
+
+  // Live WhatsApp state: while a message is on its way (every 5s) or a customer's reply is awaited
+  // (every 30s), refresh only those orders' WhatsApp info in the background, without reloading the list.
+  const [waTick, setWaTick] = useState(0)
+  useEffect(() => {
+    const now = Date.now()
+    const sending: number[] = []
+    const awaiting: number[] = []
+    for (const s of sales) {
+      if (s.orderNo == null) continue
+      const onItsWay = s.whatsapp?.some(
+        (m) => m.status === 'PENDING' && !(m.scheduledFor && new Date(m.scheduledFor).getTime() > now + 60_000),
+      )
+      if (onItsWay) sending.push(s.orderNo)
+      else if (s.customerResponse === 'PENDING') awaiting.push(s.orderNo)
+    }
+    const orderNos = Array.from(new Set([...sending, ...awaiting])).slice(0, 200)
+    if (!orderNos.length) return
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        if (document.hidden) return // tab in the background: check again later
+        const res = await fetch(`/api/whatsapp/order-status?orderNos=${orderNos.join(',')}`, { cache: 'no-store' })
+        if (!res.ok || cancelled) return
+        const { orders } = await res.json()
+        setSales((prev) => {
+          let changed = false
+          const next = prev.map((s) => {
+            const o = s.orderNo != null ? orders[s.orderNo] : null
+            if (!o) return s
+            if (JSON.stringify(o.whatsapp) === JSON.stringify(s.whatsapp ?? []) && o.customerResponse === s.customerResponse) return s
+            changed = true
+            return { ...s, whatsapp: o.whatsapp, customerResponse: o.customerResponse, customerRespondedAt: o.customerRespondedAt }
+          })
+          return changed ? next : prev
+        })
+      } catch {
+        // offline for a moment: the next round tries again
+      } finally {
+        if (!cancelled) setWaTick((t) => t + 1)
+      }
+    }, sending.length ? 5000 : 30000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [sales, waTick])
 
   /* OLD INVENTORY FLOW — uncomment to restore (and add fetchLowStockCount back to refreshAll)
   // Fetch Low Stock Count for Alert
@@ -329,6 +381,7 @@ export default function Home() {
           onReceivePayment={(sale) => setReceiveModal({ sale, mode: 'receive' })}
           onEditOrder={(items) => setEditOrderItems(items)}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
+          onChanged={fetchSales}
         />
       )}
 
@@ -374,7 +427,14 @@ export default function Home() {
         </div>
       )}
 
-      {activeSection === 'settings' && <CityRatesTab />}
+      {activeSection === 'whatsapp' && <WhatsAppPage />}
+
+      {activeSection === 'settings' && (
+        <div className="space-y-6">
+          <WhatsAppSwitches />
+          <CityRatesTab />
+        </div>
+      )}
 
       {/* Slide-over Order Details Drawer */}
       <OrderDetailsDrawer

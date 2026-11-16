@@ -34,3 +34,10 @@ yarn-error.log*
 .idea
 *.swp
 *.swo
+
+# whatsmeow source zip (reference only; wa-service pulls it as a Go module)
+/whatsmeow-main/
+/whatsmeow-main.zip
+
+# Database dumps (customer data)
+/backups/

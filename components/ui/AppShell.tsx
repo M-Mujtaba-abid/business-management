@@ -52,6 +52,8 @@ export default function AppShell({
         return 'Expenses'
       case 'partners-suppliers':
         return 'Payments'
+      case 'whatsapp':
+        return 'WhatsApp'
       case 'settings':
         return 'Settings'
       default:
@@ -69,8 +71,10 @@ export default function AppShell({
         return 'General business costs like ads and packaging'
       case 'partners-suppliers':
         return 'Who has the money, what is still to come, and what you owe suppliers'
+      case 'whatsapp':
+        return 'Link the number, edit customer messages and read chats'
       case 'settings':
-        return 'Categories and delivery rates'
+        return 'WhatsApp on / off, categories and delivery rates'
       default:
         return ''
     }

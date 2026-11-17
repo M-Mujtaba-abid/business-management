@@ -1,0 +1,6 @@
+.env
+*.db
+*.db-*
+README.md
+docker-compose.yml
+deploy/

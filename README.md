@@ -53,7 +53,11 @@ Install all required npm packages:
 npm install
 ```
 
-This will take 2-3 minutes. Wait for it to complete.
+This will take 2-3 minutes. Wait for it to complete. The project automatically runs Prisma client generation after install, but if you ever see the `@prisma/client did not initialize yet` error, run:
+
+```bash
+npx prisma generate
+```
 
 ### Step 3: Set Up Neon Database
 

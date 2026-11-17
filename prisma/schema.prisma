@@ -4,7 +4,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // Neon direct (non-pooler) connection, used by prisma migrate
 }
 
 enum ExpenseCategory {
@@ -40,6 +41,28 @@ enum CustomerPayment {
   NOT_RECEIVED
   RECEIVED
   NOT_APPLICABLE
+}
+
+// Customer's WhatsApp reply to the "confirm your order" message
+enum CustomerResponse {
+  NONE
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum WhatsAppKind {
+  ORDER_CONFIRM
+  DISPATCHED
+  DELIVERED
+  REPLY_ACK
+  BILL // the order's bill image, sent from the Bill window
+}
+
+enum WhatsAppStatus {
+  PENDING
+  SENT
+  FAILED
 }
 
 enum ReturnedItemStatus {
@@ -141,6 +164,9 @@ model Withdrawal {
 model OrderSource {
   id        String   @id @default(cuid())
   name      String   @unique
+  // Send WhatsApp messages / bills to customers of this source? (off for Daraz: the marketplace
+  // does not allow contacting its customers outside Daraz)
+  whatsappEnabled Boolean @default(true)
   createdAt DateTime @default(now())
 
   sales     Sale[]
@@ -227,6 +253,14 @@ model Sale {
   // Daraz / Website order ID, and the courier (Leopards...) tracking number
   externalOrderId        String?
   trackingNumber         String?
+  // Customer's WhatsApp confirm / cancel reply (shared by a parcel's products)
+  customerResponse       CustomerResponse @default(NONE)
+  customerRespondedAt    DateTime?
+  // Returned orders: when it was marked Returned (courier status), and whether the parcel
+  // has physically come back to us yet (it usually arrives a few days later)
+  returnedAt             DateTime?
+  returnReceived         Boolean     @default(false)
+  returnReceivedAt       DateTime?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
@@ -241,6 +275,7 @@ model Sale {
   @@index([createdAt])
   @@index([city])
   @@index([status])
+  @@index([status, returnReceived])
   @@index([categoryId])
   @@index([supplierId])
   @@index([supplierPaymentStatus])
@@ -253,6 +288,68 @@ model Sale {
   @@index([orderNo])
   @@index([externalOrderId])
   @@index([trackingNumber])
+  @@index([customerResponse])
+}
+
+// WhatsApp messages sent to customers (one per order + kind, so a status change never sends twice)
+model WhatsAppMessage {
+  id          String         @id @default(cuid())
+  orderNo     Int
+  phone       String
+  kind        WhatsAppKind
+  body        String
+  status      WhatsAppStatus @default(PENDING)
+  // WhatsApp message id, used to match a customer's quoted reply to this order
+  waMessageId String?        @unique
+  error       String?
+  attempts    Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  sentAt      DateTime?
+  // Held back by quiet hours / the daily limit: when wa-service will send it
+  scheduledFor DateTime?
+
+  @@unique([orderNo, kind])
+  @@index([phone])
+}
+
+// Editable wording of each automatic WhatsApp message (key = ORDER_CONFIRM, DISPATCHED, DELIVERED,
+// REPLY_CONFIRMED, REPLY_CANCELLED). No row = the built-in default text in lib/whatsapp.ts.
+model WhatsAppTemplate {
+  key         String   @id
+  body        String
+  // More wordings of the same message; each send picks one at random (anti-spam)
+  variants    String[] @default([])
+  // Wording used last time, so the next customer gets a different one
+  lastVariant Int      @default(-1)
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+}
+
+// Customers who replied STOP: they get no automatic messages until they reply START
+model WhatsAppOptOut {
+  phone     String   @id
+  createdAt DateTime @default(now())
+}
+
+enum ChatDirection {
+  IN
+  OUT
+}
+
+// Full conversation with each customer, shown in the order's Chat window
+model WhatsAppChat {
+  id          String        @id @default(cuid())
+  phone       String
+  direction   ChatDirection
+  body        String
+  orderNo     Int?
+  // true = typed on the business phone (not sent automatically)
+  manual      Boolean       @default(false)
+  waMessageId String?       @unique
+  createdAt   DateTime      @default(now())
+
+  @@index([phone, createdAt])
 }
 
 // Atomic counters (e.g. the next order number)
@@ -279,4 +376,11 @@ model OrderImage {
   createdAt DateTime @default(now())
 
   @@index([orderNo])
+}
+
+// Simple app-wide switches (e.g. "whatsapp.enabled" = "true" / "false")
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

@@ -1,0 +1,19 @@
+services:
+  wa-service:
+    build: .
+    restart: always
+    env_file: .env
+    ports:
+      # Only reachable from this machine; put Caddy / nginx (HTTPS) in front for the internet
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # The WhatsApp session lives here, so the QR is scanned only once
+      - wa-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  wa-data:

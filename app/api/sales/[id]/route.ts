@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { OrderStatus, Sale } from '@prisma/client'
 import { deliveredProfit, splitByWeight } from '@/lib/saleMoney'
 import { destroyPhoto } from '@/lib/cloudinary'
+import { notifyOrder, kindForStatus } from '@/lib/whatsapp'
 
 // The order and, if it is part of a parcel, every product delivered / returned with it
 const loadParcel = async (id: string): Promise<Sale[]> => {
@@ -95,12 +96,24 @@ export async function PATCH(
               profit,
               returnLoss: savedReturnLoss,
               deductDeliveryOnReturn: shouldDeductLoss,
+              // Marked Returned from the courier status: the parcel is still on its way back
+              ...(targetStatus === 'RETURNED' && prevStatus !== 'RETURNED'
+                ? { returnedAt: new Date(), returnReceived: false, returnReceivedAt: null }
+                : {}),
+              ...(targetStatus !== 'RETURNED' && prevStatus === 'RETURNED'
+                ? { returnedAt: null, returnReceived: false, returnReceivedAt: null }
+                : {}),
             },
           })
         )
       }
       return rows
     })
+
+    // WhatsApp the customer when the order really moved to Packing / Dispatched / Delivered.
+    // Each message is sent once per order, so moving back and forth never sends it twice.
+    const waKind = sales[0].status !== targetStatus ? kindForStatus(targetStatus) : null
+    if (waKind) await notifyOrder(sales[0].orderNo, waKind)
 
     return NextResponse.json(updated.find((s) => s.id === params.id) ?? updated[0])
   } catch (error: any) {

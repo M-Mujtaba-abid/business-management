@@ -8,6 +8,7 @@ import {
   Receipt,
   Wallet,
   Settings,
+  MessageCircle,
   // PlusCircle, // OLD INVENTORY FLOW (Restock button)
   Plus,
   // RefreshCw, // SEED DEMO DATA button
@@ -20,6 +21,7 @@ export type NavSection =
   | 'inventory'
   | 'finance'
   | 'partners-suppliers'
+  | 'whatsapp'
   | 'settings'
 
 interface SidebarProps {
@@ -72,6 +74,11 @@ export default function Sidebar({
       id: 'finance' as NavSection,
       label: 'Expenses',
       icon: Receipt,
+    },
+    {
+      id: 'whatsapp' as NavSection,
+      label: 'WhatsApp',
+      icon: MessageCircle,
     },
     {
       id: 'settings' as NavSection,

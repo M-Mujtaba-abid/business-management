@@ -1,0 +1,5 @@
+.env
+*.db
+*.db-*
+/wa-service
+deploy/.domain

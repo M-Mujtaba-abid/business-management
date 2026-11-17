@@ -1,0 +1,8 @@
+{$DOMAIN} {
+	encode gzip
+	# Bills are sent as base64 images (up to 5 MB); leave room for that
+	request_body {
+		max_size 10MB
+	}
+	reverse_proxy wa-service:8080
+}

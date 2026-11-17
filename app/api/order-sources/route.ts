@@ -27,7 +27,10 @@ export async function POST(request: NextRequest) {
     })
     if (existing) return NextResponse.json(existing)
 
-    const source = await prisma.orderSource.create({ data: { name: trimmed } })
+    // Daraz (or a Daraz store) starts with WhatsApp off: it forbids contacting its customers elsewhere
+    const source = await prisma.orderSource.create({
+      data: { name: trimmed, whatsappEnabled: !/daraz/i.test(trimmed) },
+    })
     return NextResponse.json(source, { status: 201 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to create order source' }, { status: 500 })

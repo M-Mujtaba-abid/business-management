@@ -20,12 +20,19 @@ const (
 	PriorityNormal = "normal" // automatic order updates: daytime only, within the daily limit
 )
 
+// A single-choice poll sent after the text
+type Poll struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
+}
+
 type Job struct {
 	RefID    string    `json:"refId"` // the app's WhatsAppMessage id, echoed back in the webhook
 	Phone    string    `json:"phone"` // international digits, e.g. 923001234567
 	Text     string    `json:"text"`  // the message, or the caption of Image
 	Image    []byte    `json:"image,omitempty"`
 	Mime     string    `json:"mime,omitempty"`
+	Poll     *Poll     `json:"poll,omitempty"` // sent right after Text (e.g. ✅ Confirm / ❌ Cancel)
 	Priority string    `json:"priority"`
 	Added    time.Time `json:"added"`
 }
@@ -284,7 +291,21 @@ func (q *Queue) process(ctx context.Context, j Job) {
 		return
 	}
 	q.log.Info().Str("ref", j.RefID).Str("phone", maskPhone(j.Phone)).Str("id", id).Str("priority", j.Priority).Msg("Message sent")
-	q.hook.Send(map[string]any{"type": "sent", "refId": j.RefID, "messageId": id})
+	event := map[string]any{"type": "sent", "refId": j.RefID, "messageId": id}
+
+	// The poll goes a moment after the text, like a person sending a second message
+	if j.Poll != nil {
+		sleepCtx(sendCtx, 2*time.Second+time.Duration(rand.Int63n(int64(2*time.Second))))
+		pollID, perr := q.wa.SendPoll(sendCtx, j.Phone, j.RefID, j.Poll.Question, j.Poll.Options)
+		if perr != nil {
+			// The text did go out; the customer can still answer by typing 1 / 2
+			q.log.Warn().Err(perr).Str("ref", j.RefID).Msg("Poll not sent")
+			event["pollError"] = perr.Error()
+		} else {
+			event["poll"] = map[string]any{"id": pollID, "question": j.Poll.Question, "options": j.Poll.Options}
+		}
+	}
+	q.hook.Send(event)
 }
 
 // ── Disk ──

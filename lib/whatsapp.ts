@@ -40,7 +40,7 @@ const productsLine = (rows: Sale[]) =>
 
 // ── Message templates (editable on the WhatsApp page, saved in WhatsAppTemplate) ──
 
-export const templateKeyFor = (kind: Exclude<WhatsAppKind, 'BILL'>, response?: 'CONFIRMED' | 'CANCELLED'): TemplateKey =>
+export const templateKeyFor = (kind: Exclude<WhatsAppKind, 'BILL' | 'ANSWER_LOCKED'>, response?: 'CONFIRMED' | 'CANCELLED'): TemplateKey =>
   kind === 'REPLY_ACK' ? (response === 'CANCELLED' ? 'REPLY_CANCELLED' : 'REPLY_CONFIRMED') : kind
 
 // The saved wordings (or the defaults) and whether the message is switched on
@@ -133,6 +133,71 @@ export function orderValues(rows: Sale[]): Record<string, string> {
 export const loadOrder = (orderNo: number) =>
   prisma.sale.findMany({ where: { orderNo }, orderBy: { createdAt: 'asc' } })
 
+// ── Confirm / Cancel poll (sent right after the order confirmation text) ──
+
+// Fixed on purpose: a vote only carries a hash of the option's text, so changing these would stop
+// votes on polls that were already sent from being understood. Index 0 = confirm, 1 = cancel.
+export const POLL_OPTIONS = ['✅ Confirm', '❌ Cancel'] as const
+
+const POLL_QUESTIONS = [
+  '{Order|Apna order} {orderNo} confirm {karein|kar dein}?',
+  'Kya hum order {orderNo} {bhej dein|dispatch kar dein}?',
+  'Order {orderNo}: {confirm ya cancel?|aap ka jawab?}',
+]
+
+const pollQuestion = (values: Record<string, string>) =>
+  renderTemplate(POLL_QUESTIONS[Math.floor(Math.random() * POLL_QUESTIONS.length)], values).slice(0, 255)
+
+export const responseForOption = (index: number): 'CONFIRMED' | 'CANCELLED' | null =>
+  index === 0 ? 'CONFIRMED' : index === 1 ? 'CANCELLED' : null
+
+const answerLabel = (r: 'CONFIRMED' | 'CANCELLED') => (r === 'CONFIRMED' ? POLL_OPTIONS[0] : POLL_OPTIONS[1])
+
+const ANSWER_LOCKED_TEXT = [
+  '{name}, aap ka pehla jawab ({answer}) order {orderNo} ke liye {save ho chuka hai|humare paas save hai} 👍',
+  'Agar isay badalna ho to {humein call ya message karein|humein message ya call kar dein}.',
+  '',
+  '— {business}',
+].join('\n')
+
+// The customer's first confirm / cancel is final (a poll vote can be changed any time, so later
+// taps must not flip the order back and forth):
+//   'saved'   first answer: stored on the order, thank-you sent
+//   'same'    the same answer again (a repeated tap or webhook): nothing happens
+//   'locked'  a different answer later: the order keeps the first one; the customer is told once
+export async function applyCustomerResponse(orderNo: number, response: 'CONFIRMED' | 'CANCELLED'): Promise<'saved' | 'same' | 'locked'> {
+  // Only an order still waiting for an answer takes it (atomic, so two quick taps can't both win)
+  const { count } = await prisma.sale.updateMany({
+    where: { orderNo, customerResponse: { in: ['NONE', 'PENDING'] } },
+    data: { customerResponse: response, customerRespondedAt: new Date() },
+  })
+  if (count > 0) {
+    await notifyOrder(orderNo, 'REPLY_ACK', { force: true, response })
+    return 'saved'
+  }
+  const lead = await prisma.sale.findFirst({ where: { orderNo }, select: { customerResponse: true } })
+  if (!lead || lead.customerResponse === response) return 'same'
+  if (lead.customerResponse === 'CONFIRMED' || lead.customerResponse === 'CANCELLED') {
+    await tellAnswerLocked(orderNo, lead.customerResponse)
+  }
+  return 'locked'
+}
+
+// "Your first answer is saved, call or message us to change it": at most once per order. Never throws.
+async function tellAnswerLocked(orderNo: number, first: 'CONFIRMED' | 'CANCELLED'): Promise<void> {
+  try {
+    const rows = await loadOrder(orderNo)
+    const phone = rows.length ? toWaPhone(rows[0].customerPhone) : null
+    if (!phone || (await whatsappBlockedFor(rows[0].orderSourceId)) || (await isOptedOut(phone))) return
+    const body = renderTemplate(ANSWER_LOCKED_TEXT, { ...orderValues(rows), answer: answerLabel(first) })
+    // The unique (order, kind) makes this a one-time message: a second attempt fails here
+    const msg = await prisma.whatsAppMessage.create({ data: { orderNo, kind: 'ANSWER_LOCKED', phone, body } }).catch(() => null)
+    if (msg) await pushToService(msg, { priority: 'now' })
+  } catch (err) {
+    console.error(`WhatsApp answer-locked note for #${orderNo} failed:`, err)
+  }
+}
+
 // Hand one saved message to wa-service and record the outcome on its row.
 // With `image`, the message goes out as a picture and `body` is its caption.
 // priority 'now': an answer to something the customer just did (their reply, a bill we chose to send);
@@ -140,7 +205,11 @@ export const loadOrder = (orderNo: number) =>
 // Returns the error text, or null when it was queued.
 async function pushToService(
   msg: { id: string; phone: string; body: string },
-  opts: { priority: 'now' | 'normal'; image?: { data: ArrayBuffer; mime: 'image/png' | 'image/jpeg' } },
+  opts: {
+    priority: 'now' | 'normal'
+    image?: { data: ArrayBuffer; mime: 'image/png' | 'image/jpeg' }
+    poll?: { question: string; options: string[] } // sent right after the text
+  },
 ): Promise<string | null> {
   let error: string | null = null
   let scheduledFor: Date | null = null
@@ -157,6 +226,7 @@ async function pushToService(
           text: msg.body,
           priority: opts.priority,
           ...(opts.image ? { image: Buffer.from(opts.image.data).toString('base64'), mime: opts.image.mime } : {}),
+          ...(opts.poll ? { poll: opts.poll } : {}),
         }),
         signal: AbortSignal.timeout(opts.image ? 20000 : 8000),
         cache: 'no-store',
@@ -187,7 +257,7 @@ interface NotifyOptions {
 
 // Sends the message for one step of an order. Each (order, kind) is sent once, so moving a status
 // back and forth never spams the customer. Never throws.
-export async function notifyOrder(orderNo: number | null | undefined, kind: Exclude<WhatsAppKind, 'BILL'>, opts: NotifyOptions = {}): Promise<void> {
+export async function notifyOrder(orderNo: number | null | undefined, kind: Exclude<WhatsAppKind, 'BILL' | 'ANSWER_LOCKED'>, opts: NotifyOptions = {}): Promise<void> {
   if (!orderNo) return
   try {
     const rows = await loadOrder(orderNo)
@@ -229,7 +299,11 @@ export async function notifyOrder(orderNo: number | null | undefined, kind: Excl
       await prisma.sale.updateMany({ where: { orderNo }, data: { customerResponse: 'PENDING' } })
     }
 
-    const error = await pushToService(msg, { priority: kind === 'REPLY_ACK' ? 'now' : 'normal' })
+    const error = await pushToService(msg, {
+      priority: kind === 'REPLY_ACK' ? 'now' : 'normal',
+      // Confirm / Cancel as a poll the customer taps (typing 1 / 2 still works too)
+      ...(kind === 'ORDER_CONFIRM' ? { poll: { question: pollQuestion(values), options: [...POLL_OPTIONS] } } : {}),
+    })
     if (error) console.warn(`WhatsApp ${kind} for #${orderNo} not sent: ${error}`)
   } catch (err) {
     console.error(`WhatsApp ${kind} for #${orderNo} failed:`, err)
@@ -263,7 +337,7 @@ export async function whatsappByOrder(orderNos: number[]) {
   >()
   if (!orderNos.length) return map
   const msgs = await prisma.whatsAppMessage.findMany({
-    where: { orderNo: { in: orderNos }, kind: { not: 'REPLY_ACK' } },
+    where: { orderNo: { in: orderNos }, kind: { notIn: ['REPLY_ACK', 'ANSWER_LOCKED'] } },
     orderBy: { kind: 'asc' }, // stable order, so the list can tell when something changed
     select: { orderNo: true, kind: true, status: true, error: true, sentAt: true, updatedAt: true, scheduledFor: true },
   })
@@ -276,7 +350,7 @@ export async function whatsappByOrder(orderNos: number[]) {
 }
 
 // Which message (if any) a status change should send
-export const kindForStatus = (status: string): Exclude<WhatsAppKind, 'BILL'> | null =>
+export const kindForStatus = (status: string): Exclude<WhatsAppKind, 'BILL' | 'ANSWER_LOCKED'> | null =>
   status === 'PACKING' ? 'ORDER_CONFIRM' : status === 'DISPATCHED' ? 'DISPATCHED' : status === 'DELIVERED' ? 'DELIVERED' : null
 
 // ── Chat log ──

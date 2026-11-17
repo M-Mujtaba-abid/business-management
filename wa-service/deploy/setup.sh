@@ -58,6 +58,8 @@ if [ -z "$DOMAIN" ]; then
   DOMAIN="${IP}.sslip.io"
 fi
 echo "$DOMAIN" > deploy/.domain
+# docker compose reads deploy/.env by itself, so a plain "docker compose ... up" later knows the domain too
+echo "DOMAIN=$DOMAIN" > deploy/.env
 export DOMAIN
 
 # ── Build and start ──

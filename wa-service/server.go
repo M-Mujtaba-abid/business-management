@@ -66,6 +66,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		Text  string `json:"text"`
 		Image string `json:"image"` // optional, base64
 		Mime  string `json:"mime"`
+		Poll  *Poll  `json:"poll"` // optional: a single-choice poll sent right after the text
 		// "now" = an answer to the customer (sent any time); otherwise automatic (daytime, daily limit)
 		Priority string `json:"priority"`
 	}
@@ -107,11 +108,21 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "caption must be at most 1000 characters"})
 		return
 	}
+	if req.Poll != nil {
+		if msg := checkPoll(req.Poll); msg != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+			return
+		}
+		if image != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a poll can only follow a text message"})
+			return
+		}
+	}
 	if !s.wa.Status().LoggedIn {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": ErrNotLinked.Error()})
 		return
 	}
-	at, err := s.queue.Add(Job{RefID: req.RefID, Phone: req.Phone, Text: req.Text, Image: image, Mime: req.Mime, Priority: req.Priority})
+	at, err := s.queue.Add(Job{RefID: req.RefID, Phone: req.Phone, Text: req.Text, Image: image, Mime: req.Mime, Poll: req.Poll, Priority: req.Priority})
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		return
@@ -161,4 +172,28 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// checkPoll returns what is wrong with a poll, or "" when it is fine (WhatsApp's own limits)
+func checkPoll(p *Poll) string {
+	p.Question = strings.TrimSpace(p.Question)
+	if p.Question == "" || utf8.RuneCountInString(p.Question) > 255 {
+		return "poll question must be 1–255 characters"
+	}
+	if len(p.Options) < 2 || len(p.Options) > 12 {
+		return "a poll needs 2–12 options"
+	}
+	seen := map[string]bool{}
+	for i, o := range p.Options {
+		o = strings.TrimSpace(o)
+		if o == "" || utf8.RuneCountInString(o) > 100 {
+			return "each poll option must be 1–100 characters"
+		}
+		if seen[o] {
+			return "poll options must be different"
+		}
+		seen[o] = true
+		p.Options[i] = o
+	}
+	return ""
 }

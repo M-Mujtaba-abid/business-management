@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -123,5 +125,46 @@ func TestAddReplacesSameRef(t *testing.T) {
 	}
 	if q.Len() != 1 || q.st.Jobs[0].Text != "two" {
 		t.Fatalf("a resend must replace the waiting job, got %d jobs", q.Len())
+	}
+}
+
+func TestPickedOption(t *testing.T) {
+	opts := []string{"✅ Confirm", "❌ Cancel"}
+	hash := func(s string) []byte { h := sha256.Sum256([]byte(s)); return h[:] }
+	if got := pickedOption(opts, [][]byte{hash("❌ Cancel")}); got != 1 {
+		t.Fatalf("cancel: got %d", got)
+	}
+	if got := pickedOption(opts, [][]byte{hash("✅ Confirm")}); got != 0 {
+		t.Fatalf("confirm: got %d", got)
+	}
+	if got := pickedOption(opts, nil); got != -1 {
+		t.Fatalf("no vote: got %d", got)
+	}
+}
+
+func TestCheckPoll(t *testing.T) {
+	ok := &Poll{Question: " Order #1 confirm? ", Options: []string{" ✅ Confirm", "❌ Cancel "}}
+	if msg := checkPoll(ok); msg != "" || ok.Options[0] != "✅ Confirm" || ok.Question != "Order #1 confirm?" {
+		t.Fatalf("valid poll rejected or not trimmed: %q %+v", msg, ok)
+	}
+	for _, bad := range []*Poll{
+		{Question: "", Options: []string{"a", "b"}},
+		{Question: "q", Options: []string{"a"}},
+		{Question: "q", Options: []string{"a", "a"}},
+	} {
+		if checkPoll(bad) == "" {
+			t.Fatalf("bad poll accepted: %+v", bad)
+		}
+	}
+}
+
+func TestPollStorePersists(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "polls.json")
+	s := NewPollStore(file, zerolog.Nop())
+	s.Add("MSG1", "ref-1", []string{"✅ Confirm", "❌ Cancel"})
+	again := NewPollStore(file, zerolog.Nop())
+	p, ok := again.Get("MSG1")
+	if !ok || p.RefID != "ref-1" || len(p.Options) != 2 {
+		t.Fatalf("poll not restored: %+v %v", p, ok)
 	}
 }

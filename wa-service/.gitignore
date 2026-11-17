@@ -3,3 +3,4 @@
 *.db-*
 /wa-service
 deploy/.domain
+deploy/.env

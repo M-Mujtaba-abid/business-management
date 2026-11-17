@@ -32,6 +32,7 @@ type WA struct {
 	log       zerolog.Logger
 	hook      *Webhook
 	container *sqlstore.Container
+	polls     *PollStore
 
 	mu      sync.RWMutex
 	cli     *whatsmeow.Client
@@ -44,7 +45,7 @@ func NewWA(ctx context.Context, cfg Config, hook *Webhook, log zerolog.Logger) (
 	if err != nil {
 		return nil, err
 	}
-	w := &WA{ctx: ctx, log: log, hook: hook, container: container}
+	w := &WA{ctx: ctx, log: log, hook: hook, container: container, polls: NewPollStore(cfg.PollFile, log)}
 	device, err := container.GetFirstDevice(ctx)
 	if err != nil {
 		return nil, err
@@ -254,6 +255,22 @@ func (w *WA) SendImage(ctx context.Context, phone string, data []byte, mime, cap
 	return resp.ID, nil
 }
 
+// SendPoll sends a single-choice poll (e.g. ✅ Confirm / ❌ Cancel) and remembers it, so the
+// customer's vote can be read and matched to refID later.
+func (w *WA) SendPoll(ctx context.Context, phone, refID, question string, options []string) (string, error) {
+	cli, to, err := w.recipient(ctx, phone)
+	if err != nil {
+		return "", err
+	}
+	// whatsmeow saves the poll's secret key on send; votes are encrypted with it
+	resp, err := cli.SendMessage(ctx, to, cli.BuildPollCreation(question, options, 1))
+	if err != nil {
+		return "", err
+	}
+	w.polls.Add(resp.ID, refID, options)
+	return resp.ID, nil
+}
+
 func (w *WA) SendText(ctx context.Context, phone, text string) (string, error) {
 	cli, to, err := w.recipient(ctx, phone)
 	if err != nil {
@@ -296,6 +313,10 @@ func (w *WA) onMessage(e *events.Message) {
 	if info.IsFromMe || info.IsGroup || info.Chat.Server == types.BroadcastServer || info.Chat.Server == types.NewsletterServer {
 		return
 	}
+	if e.Message.GetPollUpdateMessage() != nil {
+		w.onPollVote(e)
+		return
+	}
 	text, quotedID := messageText(e.Message)
 	if strings.TrimSpace(text) == "" {
 		return
@@ -316,6 +337,42 @@ func (w *WA) onMessage(e *events.Message) {
 		"quotedId":  quotedID,
 		"messageId": info.ID,
 		"timestamp": info.Timestamp.Unix(),
+	})
+}
+
+// onPollVote reads a customer's vote on one of our polls and tells the app which option they
+// picked (option -1 = they took their vote back).
+func (w *WA) onPollVote(e *events.Message) {
+	pollID := e.Message.GetPollUpdateMessage().GetPollCreationMessageKey().GetID()
+	poll, ok := w.polls.Get(pollID)
+	if !ok {
+		w.log.Info().Str("poll", pollID).Msg("Vote on a poll we do not know (too old, or not ours)")
+		return
+	}
+	vote, err := w.client().DecryptPollVote(w.ctx, e)
+	if err != nil {
+		w.log.Warn().Err(err).Str("poll", pollID).Msg("Could not read a poll vote")
+		return
+	}
+	phone := w.senderPhone(e.Info)
+	if phone == "" {
+		w.log.Warn().Str("sender", e.Info.Sender.String()).Msg("Could not find the phone number of a voter")
+		return
+	}
+	idx := pickedOption(poll.Options, vote.GetSelectedOptions())
+	option := ""
+	if idx >= 0 {
+		option = poll.Options[idx]
+	}
+	w.hook.Send(map[string]any{
+		"type":      "vote",
+		"refId":     poll.RefID,
+		"pollId":    pollID,
+		"from":      phone,
+		"option":    option,
+		"index":     idx,
+		"messageId": e.Info.ID,
+		"timestamp": e.Info.Timestamp.Unix(),
 	})
 }
 

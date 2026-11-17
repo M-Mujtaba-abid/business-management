@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { OrderStatus, SupplierPayment, CustomerPayment, CustomerResponse } from '@prisma/client'
-import { splitByWeight } from '@/lib/saleMoney'
+import { splitByWeight, deliveredProfit } from '@/lib/saleMoney'
 import { parseImages } from '@/lib/orderImages'
 import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 import { notifyOrder, kindForStatus, whatsappByOrder } from '@/lib/whatsapp'
@@ -229,7 +229,9 @@ export async function POST(request: NextRequest) {
     const externalOrderId = cleanRef(body.externalOrderId)
     const trackingNumber = cleanRef(body.trackingNumber)
     // A new order starts as Packing, or Dispatched if it already left
-    const startStatus = body.status === 'DISPATCHED' ? 'DISPATCHED' : 'PACKING'
+    // New orders start as Packing; Dispatched / Delivered when the parcel already went out
+    const startStatus: OrderStatus =
+      body.status === 'DISPATCHED' || body.status === 'DELIVERED' ? body.status : 'PACKING'
     // When the order was taken (defaults to now); can be set to an earlier date
     const orderDate = parseOrderDate(body.orderDate)
     if (typeof orderDate === 'string') return NextResponse.json({ error: orderDate }, { status: 400 })
@@ -340,7 +342,21 @@ export async function POST(request: NextRequest) {
         const saleTotal = it.soldPrice * it.quantity
         const payout = payoutShares ? payoutShares[i] : null
 
-        // Starts as Packing (or Dispatched). Profit realized = 0 until delivered.
+        // Starts as Packing (or Dispatched). Profit realized = 0 until delivered;
+        // an order added as already Delivered gets its profit right away.
+        const receivedAmount = payout !== null && Math.abs(payout - saleTotal) >= 0.005 ? payout : null
+        const profit =
+          startStatus === 'DELIVERED'
+            ? deliveredProfit({
+                soldPrice: it.soldPrice,
+                quantity: it.quantity,
+                receivedAmount,
+                costPrice: it.costPrice,
+                deliveryCharge: dcShares[i],
+                petrolCost: petrolShares[i],
+                gstAmount: gstShares[i],
+              })
+            : 0
         const row = await tx.sale.create({
           data: {
             productId: it.productId,
@@ -362,7 +378,7 @@ export async function POST(request: NextRequest) {
             supplierPaidAt: supplierStatus === 'PAID' ? new Date() : null,
             paymentSourceId: paymentSourceId || null,
             orderSourceId: orderSourceId || null,
-            receivedAmount: payout !== null && Math.abs(payout - saleTotal) >= 0.005 ? payout : null,
+            receivedAmount,
             receivedById: receivedById || null,
             dcPaidById: delivery_num > 0 ? dcPaidById : null,
             parcelId,
@@ -371,11 +387,16 @@ export async function POST(request: NextRequest) {
             trackingNumber,
             ...(orderDate ? { createdAt: orderDate } : {}),
             paymentStatus: 'NOT_RECEIVED',
-            profit: 0,
+            profit,
             status: startStatus,
             deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
           },
         })
+
+        // Old inventory flow: a delivered order takes its product out of stock
+        if (startStatus === 'DELIVERED' && it.productId) {
+          await tx.product.update({ where: { id: it.productId }, data: { stockQty: { decrement: it.quantity } } })
+        }
 
         if (it.returnedItemId) {
           await tx.returnedItem.update({
@@ -400,7 +421,8 @@ export async function POST(request: NextRequest) {
       return rows
     })
 
-    // WhatsApp the customer (Packing → "confirm your order", Dispatched → "on its way").
+    // WhatsApp the customer (Packing → "confirm your order", Dispatched → "on its way",
+    // Delivered → "delivered, please review").
     // Runs after the order is saved and never throws, so WhatsApp can't block an order.
     const waKind = kindForStatus(startStatus)
     if (waKind) await notifyOrder(created[0]?.orderNo, waKind)

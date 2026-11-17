@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Sparkles, Package, Truck, Fuel, Receipt, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
+import { X, Sparkles, Package, Truck, CheckCircle2, Fuel, Receipt, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
@@ -100,8 +100,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   const [receivedById, setReceivedById] = useState('')
   // person whose account the DC is paid from
   const [dcPaidById, setDcPaidById] = useState('')
-  // new order only: Packing (default) or already Dispatched
-  const [startStatus, setStartStatus] = useState<'PACKING' | 'DISPATCHED'>('PACKING')
+  // new order only: Packing (default), or already Dispatched / Delivered
+  const [startStatus, setStartStatus] = useState<'PACKING' | 'DISPATCHED' | 'DELIVERED'>('PACKING')
   const [orderSources, setOrderSources] = useState<SelectOption[]>([])
   // order source id, or OTHER_SOURCE while picking/creating a new one
   const [orderSourceId, setOrderSourceId] = useState('')
@@ -1013,6 +1013,9 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                   </button>
                   <button type="button" onClick={() => setStartStatus('DISPATCHED')} className={chipClass(startStatus === 'DISPATCHED')}>
                     <Truck className="h-3.5 w-3.5" /> Dispatched
+                  </button>
+                  <button type="button" onClick={() => setStartStatus('DELIVERED')} className={chipClass(startStatus === 'DELIVERED')}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">Change it later from order details when the parcel leaves.</p>

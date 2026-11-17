@@ -57,6 +57,7 @@ enum WhatsAppKind {
   DELIVERED
   REPLY_ACK
   BILL // the order's bill image, sent from the Bill window
+  ANSWER_LOCKED // once per order: "your first answer is saved" when the customer tries to change it
 }
 
 enum WhatsAppStatus {

@@ -40,6 +40,7 @@ type Config struct {
 	MaxGap        time.Duration
 	QueueSize     int
 	QueueFile     string // pending messages are kept here, so a restart loses none
+	PollFile      string // polls we sent (to read the votes on them)
 
 	// Anti-ban pacing for automatic ("normal") messages; replies to a customer go out anyway
 	Location   *time.Location // the shop's clock
@@ -83,6 +84,7 @@ func loadConfig() (Config, error) {
 		MaxGap:        envSeconds("WA_MAX_GAP_SECONDS", 60),
 		QueueSize:     500,
 		QueueFile:     env("WA_QUEUE_FILE", "/data/queue.json"),
+		PollFile:      env("WA_POLL_FILE", "/data/polls.json"),
 		QuietStart:    envInt("WA_QUIET_START", 22, 0, 23),
 		QuietEnd:      envInt("WA_QUIET_END", 9, 0, 23),
 		DailyLimit:    envInt("WA_DAILY_NEW_CHATS", 150, 0, 100000),

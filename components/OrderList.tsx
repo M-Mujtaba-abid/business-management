@@ -8,6 +8,7 @@ import CopyRef from './ui/CopyRef'
 import { CustomerReplyBadge, WhatsAppMsgStatus, BillStatus, CustomerResponse, WhatsAppMsg } from './ui/WhatsAppStatus'
 import { WhatsAppChatButton } from './WhatsAppChat'
 import ReturnReceivedToggle from './ui/ReturnReceivedToggle'
+import CourierBadge from './ui/CourierBadge'
 import { BillButton } from './BillDialog'
 import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
@@ -47,6 +48,11 @@ export interface Sale {
   orderNo?: number | null
   externalOrderId?: string | null
   trackingNumber?: string | null
+  // Latest Leopards status (pushed by Leopards)
+  courierStatus?: string | null
+  courierStatusCode?: string | null
+  courierReason?: string | null
+  courierStatusAt?: string | null
   imageCount?: number // photos attached to the order
   imageUrl?: string | null // first photo URL for thumbnail
   paymentSource?: { id: string; name: string } | null
@@ -712,7 +718,8 @@ export default function OrderList({
                         {(sale.externalOrderId || sale.trackingNumber) && (
                           <div className="flex flex-wrap gap-x-2" onClick={(e) => e.stopPropagation()}>
                             {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
-                            {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} />}
+                            {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track />}
+                            <CourierBadge status={sale.courierStatus} code={sale.courierStatusCode} reason={sale.courierReason} at={sale.courierStatusAt} />
                           </div>
                         )}
                         {customerLine(sale)}
@@ -870,7 +877,8 @@ export default function OrderList({
                           {(sale.externalOrderId || sale.trackingNumber) && (
                             <div className="flex flex-wrap gap-x-3 mt-0.5" onClick={(e) => e.stopPropagation()}>
                               {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
-                              {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} />}
+                              {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track />}
+                            <CourierBadge status={sale.courierStatus} code={sale.courierStatusCode} reason={sale.courierReason} at={sale.courierStatusAt} />
                             </div>
                           )}
                           <div className="mt-0.5">{customerLine(sale)}</div>

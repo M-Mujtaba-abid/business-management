@@ -40,7 +40,7 @@ const INFO: Record<TemplateKey, { step: string; title: string; when: string; ico
   DISPATCHED: {
     step: '3',
     title: 'Order dispatched',
-    when: 'When the order status changes to Dispatched. The tracking line is left out if there is no tracking number.',
+    when: 'When the order status changes to Dispatched. The tracking line is left out if there is no tracking number. The tracking link (Leopards numbers only) goes to customers who have replied or voted.',
     icon: Truck,
     tone: 'bg-sky-50 text-sky-700 border-sky-200',
   },

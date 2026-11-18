@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import type { Sale, WhatsAppKind } from '@prisma/client'
 import prisma from '@/lib/prisma'
 import { cleanPhone } from '@/lib/orderRefs'
+import { trackingLink } from '@/lib/leopards'
 import { DEFAULT_TEMPLATES, renderTemplate, pickVariant, type TemplateKey } from '@/lib/whatsappTemplates'
 
 // WhatsApp customer messages, sent through our own whatsmeow service (wa-service/).
@@ -124,6 +125,7 @@ export function orderValues(rows: Sale[]): Record<string, string> {
     address: lead.address || '',
     city: lead.city || '',
     tracking: lead.trackingNumber || '',
+    trackingLink: trackingLink(lead.trackingNumber),
     reviewUrl: REVIEW_URL,
     business: BUSINESS_NAME,
   }
@@ -284,7 +286,11 @@ export async function notifyOrder(orderNo: number | null | undefined, kind: Excl
     const tpl = await chooseBody(templateKeyFor(kind, opts.response))
     if (!tpl.enabled) return // this message is switched off on the WhatsApp page
     const values = orderValues(rows)
-    if (values.reviewUrl && !(await hasReplied(phone))) values.reviewUrl = '' // no links to people who never wrote back
+    // no links to people who never wrote back (or voted): links from unknown numbers look like spam
+    if ((values.reviewUrl || values.trackingLink) && !(await hasReplied(phone))) {
+      values.reviewUrl = ''
+      values.trackingLink = ''
+    }
     const body = renderTemplate(tpl.body, values)
     if (!body) return
 

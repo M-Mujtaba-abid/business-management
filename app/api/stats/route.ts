@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       // Supplier payables and receivables are all time: money is owed regardless of the period
       prisma.sale.findMany({
         where: { supplierPaymentStatus: 'PENDING' },
-        select: { costPrice: true, quantity: true, createdAt: true },
+        select: { id: true, parcelId: true, costPrice: true, quantity: true, createdAt: true },
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
@@ -172,11 +172,20 @@ export async function GET(request: NextRequest) {
       activeDispatches,
       packingCount,
       totalOrdersCount: countOrders(sales),
+      // Orders in the period by status (a parcel with several products is one order)
+      orderCounts: {
+        PACKING: packingCount,
+        DISPATCHED: activeDispatches,
+        DELIVERED: countOrders(sales.filter((s) => s.status === 'DELIVERED')),
+        RETURNED: countOrders(sales.filter((s) => s.status === 'RETURNED')),
+        CANCELLED: countOrders(sales.filter((s) => s.status === 'CANCELLED')),
+      },
       expenseBreakdown,
       trend,
       trendGranularity: byMonth ? 'month' : 'day',
       salesChangePct,
       supplierPendingTotal,
+      supplierPendingCount: countOrders(pendingSupplierSales),
       supplierOverdue,
       receivablePendingTotal: unpaidDelivered.reduce((acc, s) => acc + payoutAmount(s), 0),
       receivablePendingCount: countOrders(unpaidDelivered),

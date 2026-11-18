@@ -96,6 +96,8 @@ interface Option {
 
 interface OrderListProps {
   sales: Sale[]
+  // Orders per status tab with the other filters applied ({ ALL, PACKING, … }); null while unknown
+  statusCounts?: Record<string, number> | null
   isLoading?: boolean
   searchQuery: string
   setSearchQuery: (q: string) => void
@@ -297,6 +299,7 @@ const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { h
 
 export default function OrderList({
   sales,
+  statusCounts,
   isLoading,
   searchQuery,
   setSearchQuery,
@@ -440,6 +443,15 @@ export default function OrderList({
               >
                 {tab.dot && <span className={`w-1.5 h-1.5 rounded-full ${tab.dot}`} />}
                 {tab.label}
+                {statusCounts && statusCounts[tab.value] != null && (
+                  <span
+                    className={`min-w-[18px] px-1 rounded-md text-[10px] font-bold tabular-nums ${
+                      statusFilter === tab.value ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {statusCounts[tab.value]}
+                  </span>
+                )}
               </button>
             ))}
           </div>

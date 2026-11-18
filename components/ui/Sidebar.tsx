@@ -15,14 +15,8 @@ import {
   X,
 } from 'lucide-react'
 
-export type NavSection =
-  | 'dashboard'
-  | 'orders'
-  | 'inventory'
-  | 'finance'
-  | 'partners-suppliers'
-  | 'whatsapp'
-  | 'settings'
+export const NAV_SECTIONS = ['dashboard', 'orders', 'inventory', 'finance', 'partners-suppliers', 'whatsapp', 'settings'] as const
+export type NavSection = (typeof NAV_SECTIONS)[number]
 
 interface SidebarProps {
   currentSection: NavSection

@@ -56,6 +56,8 @@ interface StatsProps {
     activeDispatches: number
     packingCount?: number
     totalOrdersCount: number
+    orderCounts?: Record<string, number>
+    supplierPendingCount?: number
     partners: Partner[]
     totalSupplierDebt: number
     supplierPendingTotal?: number
@@ -78,6 +80,8 @@ interface StatsProps {
   onOpenExpense: () => void
   onSelectOrder: (sale: Sale) => void
   onViewAllOrders: () => void
+  // Opens the orders list on one status tab ('ALL', 'PACKING', …)
+  onViewOrders?: (status: string) => void
   onViewSupplierPayments?: () => void
 }
 
@@ -108,6 +112,42 @@ const Count = memo(function Count({ value, className }: { value: number; classNa
 
 const card = 'bg-white border border-slate-200 rounded-2xl shadow-sm viz-card'
 
+// "160 orders" on a card; opens those orders when the dashboard can switch to the orders list
+function OrdersPill({ count, label, onClick, tone = 'bg-slate-100 text-slate-700' }: {
+  count: number
+  label: string
+  onClick?: () => void
+  tone?: string
+}) {
+  const body = (
+    <>
+      <span className="font-bold tabular-nums">{count.toLocaleString()}</span> {label}
+    </>
+  )
+  const cls = `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${tone}`
+  return onClick ? (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation()
+          onClick()
+        }
+      }}
+      className={`${cls} cursor-pointer hover:ring-1 hover:ring-slate-300`}
+    >
+      {body}
+    </span>
+  ) : (
+    <span className={cls}>{body}</span>
+  )
+}
+
 export default function DashboardStats({
   stats,
   recentSales = [],
@@ -117,6 +157,7 @@ export default function DashboardStats({
   // onOpenRestock, // OLD INVENTORY FLOW (Restock button)
   onSelectOrder,
   onViewAllOrders,
+  onViewOrders,
   onViewSupplierPayments,
 }: StatsProps) {
   const trend = stats.trend
@@ -200,6 +241,11 @@ export default function DashboardStats({
   const hasPacking = packingCount > 0
   const hasSupplierPending = supplierPending > 0
   const hasReturnedStock = returnedItemsCount > 0
+  // Orders behind the numbers (a parcel with several products is one order)
+  const deliveredCount = stats.orderCounts?.DELIVERED ?? 0
+  const returnedCount = stats.orderCounts?.RETURNED ?? 0
+  const supplierPendingCount = stats.supplierPendingCount ?? 0
+  const openOrders = (status: string) => (onViewOrders ? () => onViewOrders(status) : undefined)
   const change = stats.salesChangePct
   /* OLD INVENTORY FLOW — uncomment to restore
   const hasLowStock = lowStockProductsCount > 0
@@ -230,6 +276,9 @@ export default function DashboardStats({
             ) : (
               <div className="text-xs text-slate-400">From delivered orders</div>
             )}
+            <div className="mt-1.5">
+              <OrdersPill count={deliveredCount} label="delivered orders" onClick={openOrders('DELIVERED')} tone="bg-blue-50 text-blue-700" />
+            </div>
           </div>
         </div>
 
@@ -246,6 +295,9 @@ export default function DashboardStats({
               <Money value={stats.grossProfit} className="block text-2xl font-bold text-teal-700 truncate" />
               <div className="text-xs text-slate-500">
                 <span className="font-semibold text-teal-700">{pct(stats.grossProfit, stats.totalRevenue)}%</span> margin · after DC, petrol, GST
+              </div>
+              <div className="mt-1.5">
+                <OrdersPill count={deliveredCount} label="delivered orders" onClick={openOrders('DELIVERED')} tone="bg-teal-50 text-teal-700" />
               </div>
             </div>
             <Sparkline values={series.orderProfit} color={C.aqua} className="h-10 w-24 shrink-0" />
@@ -268,6 +320,12 @@ export default function DashboardStats({
               />
               <div className="text-xs text-slate-500">
                 <span className="font-semibold">{pct(stats.trueNetProfit, stats.totalRevenue)}%</span> · after expenses & returns
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <OrdersPill count={deliveredCount} label="delivered" onClick={openOrders('DELIVERED')} tone="bg-emerald-50 text-emerald-700" />
+                {returnedCount > 0 && (
+                  <OrdersPill count={returnedCount} label="returned" onClick={openOrders('RETURNED')} tone="bg-rose-50 text-rose-700" />
+                )}
               </div>
             </div>
             <Sparkline values={series.netProfit} color={netPositive ? C.green : C.red} className="h-10 w-24 shrink-0" />
@@ -305,7 +363,9 @@ export default function DashboardStats({
               <div className="text-xs text-slate-500">Active Orders</div>
               <Count value={stats.activeDispatches + packingCount} className="block text-xl font-bold text-slate-900" />
               <div className="text-[11px] text-slate-400">
-                {hasPacking ? `${packingCount} packing · ` : ''}{stats.totalOrdersCount} total
+                {hasPacking ? `${packingCount} packing · ` : ''}
+              {hasActiveDispatches ? `${stats.activeDispatches} dispatched · ` : ''}
+              {stats.totalOrdersCount} total
               </div>
             </div>
             <MiniBars values={series.orders} color={C.blue} />
@@ -362,7 +422,10 @@ export default function DashboardStats({
             </div>
             <Money value={supplierPending} className={`block text-2xl font-bold mt-1 ${hasSupplierPending ? 'text-amber-700' : 'text-slate-900'}`} />
             <div className="text-xs text-slate-500 flex items-center gap-1">
-              {hasSupplierPending ? 'Pending payments' : 'All paid'} <ArrowUpRight className="h-3 w-3" />
+              {hasSupplierPending
+                ? `${supplierPendingCount} order${supplierPendingCount !== 1 ? 's' : ''} not paid to supplier`
+                : 'All paid'}{' '}
+              <ArrowUpRight className="h-3 w-3" />
             </div>
           </button>
 
@@ -373,7 +436,15 @@ export default function DashboardStats({
             <div className="flex-1 min-w-0">
               <div className="text-xs text-slate-500">Return Loss</div>
               <Money value={stats.returnLoss} className="block text-xl font-bold text-slate-900 truncate" />
-              <div className="text-[11px] text-slate-400">{pct(stats.returnLoss, stats.totalRevenue)}% of sales</div>
+              <div className="text-[11px] text-slate-400">
+                {returnedCount > 0 && (
+                  <button type="button" onClick={openOrders('RETURNED')} className="font-semibold text-rose-600 hover:underline">
+                    {returnedCount} returned order{returnedCount !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {returnedCount > 0 ? ' · ' : ''}
+                {pct(stats.returnLoss, stats.totalRevenue)}% of sales
+              </div>
             </div>
             <MiniBars values={series.returnLoss} color={C.yellow} />
           </div>

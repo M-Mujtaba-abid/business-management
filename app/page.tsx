@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import AppShell from '@/components/ui/AppShell'
-import { NavSection } from '@/components/ui/Sidebar'
+import { NavSection, NAV_SECTIONS } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
 import OrderList, { Sale, OrderFilters, EMPTY_ORDER_FILTERS } from '@/components/OrderList'
 import OrderDetailsDrawer from '@/components/ui/OrderDetailsDrawer'
@@ -26,7 +26,26 @@ import WhatsAppSwitches from '@/components/WhatsAppSwitches'
 import { Toaster, toast } from 'sonner'
 
 export default function Home() {
-  const [activeSection, setActiveSection] = useState<NavSection>('dashboard')
+  // The open page lives in the URL (?tab=orders), so a reload or the Back button keeps you on it
+  const [activeSection, setActiveSectionState] = useState<NavSection>('dashboard')
+  const [sectionReady, setSectionReady] = useState(false)
+  useEffect(() => {
+    const fromUrl = () => {
+      const tab = new URLSearchParams(window.location.search).get('tab')
+      setActiveSectionState(tab && (NAV_SECTIONS as readonly string[]).includes(tab) ? (tab as NavSection) : 'dashboard')
+    }
+    fromUrl()
+    setSectionReady(true)
+    window.addEventListener('popstate', fromUrl)
+    return () => window.removeEventListener('popstate', fromUrl)
+  }, [])
+  const setActiveSection = useCallback((section: NavSection) => {
+    setActiveSectionState(section)
+    const url = new URL(window.location.href)
+    if (section === 'dashboard') url.searchParams.delete('tab')
+    else url.searchParams.set('tab', section)
+    if (url.href !== window.location.href) window.history.pushState(null, '', url)
+  }, [])
   const [dateRange, setDateRange] = useState<string>('all')
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
@@ -36,6 +55,8 @@ export default function Home() {
 
   // State Data
   const [sales, setSales] = useState<Sale[]>([])
+  // Orders per status tab for the current filters, e.g. { ALL: 120, PACKING: 8, … }
+  const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null)
   const [lowStockCount] = useState<number>(0) // OLD INVENTORY FLOW: was [lowStockCount, setLowStockCount]
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -118,11 +139,16 @@ export default function Home() {
       if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
       if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
       if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
-      const res = await fetch(url)
+      // The numbers on the status tabs come with the same filters (all but the status itself)
+      const [res, countsRes] = await Promise.all([
+        fetch(url),
+        fetch(url.replace('/api/sales?', '/api/sales/counts?')).catch(() => null),
+      ])
       if (res.ok) {
         const data = await res.json()
         setSales(data)
       }
+      setStatusCounts(countsRes?.ok ? await countsRes.json() : null)
     } catch (err) {
       console.error('Failed to fetch sales:', err)
     } finally {
@@ -205,6 +231,20 @@ export default function Home() {
   useEffect(() => {
     refreshAll()
   }, [refreshAll])
+
+  // Refresh button in the header: reloads only the open page's data (no full page reload).
+  // Pages that load their own data (expenses, payments, WhatsApp, settings) are re-mounted via refreshKey.
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    setRefreshKey((k) => k + 1)
+    try {
+      await Promise.all([fetchStats(), fetchSales()])
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [fetchStats, fetchSales])
 
   // Seed Data Handler
   const handleSeedData = async () => {
@@ -342,11 +382,13 @@ export default function Home() {
       onOpenExpense={() => setIsExpenseOpen(true)}
       onSeedData={handleSeedData}
       isSeeding={isSeeding}
+      onRefresh={handleRefresh}
+      isRefreshing={isRefreshing}
     >
       <Toaster position="top-right" theme="light" richColors />
 
       {/* Render Active View */}
-      {activeSection === 'dashboard' && (
+      {sectionReady && activeSection === 'dashboard' && (
         <DashboardStats
           stats={stats}
           recentSales={sales}
@@ -357,13 +399,18 @@ export default function Home() {
           onOpenExpense={() => setIsExpenseOpen(true)}
           onSelectOrder={(sale) => setSelectedDrawerSale(sale)}
           onViewAllOrders={() => setActiveSection('orders')}
+          onViewOrders={(status) => {
+            setStatusFilter(status)
+            setActiveSection('orders')
+          }}
           onViewSupplierPayments={() => setActiveSection('partners-suppliers')}
         />
       )}
 
-      {activeSection === 'orders' && (
+      {sectionReady && activeSection === 'orders' && (
         <OrderList
           sales={sales}
+          statusCounts={statusCounts}
           isLoading={isSalesLoading}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -386,17 +433,17 @@ export default function Home() {
       )}
 
       {/* OLD INVENTORY FLOW — uncomment to restore
-      {activeSection === 'inventory' && (
+      {sectionReady && activeSection === 'inventory' && (
         <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
       )}
       */}
 
-      {activeSection === 'finance' && (
-        <ExpensesTab onOpenExpenseModal={() => setIsExpenseOpen(true)} />
+      {sectionReady && activeSection === 'finance' && (
+        <ExpensesTab key={refreshKey} onOpenExpenseModal={() => setIsExpenseOpen(true)} />
       )}
 
-      {activeSection === 'partners-suppliers' && (
-        <div className="space-y-6">
+      {sectionReady && activeSection === 'partners-suppliers' && (
+        <div key={refreshKey} className="space-y-6">
           <PeopleMoneyTab
             onChanged={refreshAll}
             onViewOrders={(receivedById) => {
@@ -427,10 +474,10 @@ export default function Home() {
         </div>
       )}
 
-      {activeSection === 'whatsapp' && <WhatsAppPage />}
+      {sectionReady && activeSection === 'whatsapp' && <WhatsAppPage key={refreshKey} />}
 
-      {activeSection === 'settings' && (
-        <div className="space-y-6">
+      {sectionReady && activeSection === 'settings' && (
+        <div key={refreshKey} className="space-y-6">
           <WhatsAppSwitches />
           <CityRatesTab />
         </div>

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import Sidebar, { NavSection } from './Sidebar'
-import { Menu, Calendar, ChevronDown } from 'lucide-react'
+import { Menu, Calendar, ChevronDown, RefreshCw } from 'lucide-react'
 
 interface AppShellProps {
   currentSection: NavSection
@@ -18,6 +18,9 @@ interface AppShellProps {
   onOpenExpense: () => void
   onSeedData: () => void
   isSeeding?: boolean
+  // Reloads the open page's data only (not the whole browser page)
+  onRefresh?: () => void
+  isRefreshing?: boolean
   children: React.ReactNode
 }
 
@@ -35,6 +38,8 @@ export default function AppShell({
   onOpenExpense,
   onSeedData,
   isSeeding,
+  onRefresh,
+  isRefreshing,
   children,
 }: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false)
@@ -282,6 +287,19 @@ export default function AppShell({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {onRefresh && (
+                <button
+                  onClick={onRefresh}
+                  disabled={isRefreshing}
+                  title={`Refresh ${getSectionTitle()}`}
+                  aria-label={`Refresh ${getSectionTitle()}`}
+                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:border-emerald-200 transition disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
+                </button>
+              )}
+
               {/* Inline date filter on wide screens */}
               <div className="hidden xl:block">{dateFilter}</div>
 

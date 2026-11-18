@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner'
 import StatusBadge from './StatusBadge'
 import CopyRef from './CopyRef'
+import CourierBadge from './CourierBadge'
 import { Sale } from '../OrderList'
 import { groupSales } from '@/lib/parcels'
 import { formatDateTime } from '@/lib/format'
@@ -522,8 +523,21 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-slate-500">Tracking</span>
-                  {lead.trackingNumber ? <CopyRef label="" value={lead.trackingNumber} /> : <span className="text-slate-400">— add with Edit</span>}
+                  {lead.trackingNumber ? <CopyRef label="" value={lead.trackingNumber} track /> : <span className="text-slate-400">— add with Edit</span>}
                 </div>
+                {lead.courierStatus && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">Leopards</span>
+                    <span className="flex flex-col items-end gap-0.5 text-right">
+                      <CourierBadge status={lead.courierStatus} code={lead.courierStatusCode} reason={lead.courierReason} at={lead.courierStatusAt} />
+                      {(lead.courierReason || lead.courierStatusAt) && (
+                        <span className="text-[10px] text-slate-400">
+                          {[lead.courierReason, lead.courierStatusAt ? formatDateTime(lead.courierStatusAt) : ''].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
                   <span className="text-slate-500">DC / Petrol / GST</span>
                   <span className="font-mono text-slate-700">

@@ -1,16 +1,19 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Copy, Check } from 'lucide-react'
+import { Copy, Check, ExternalLink } from 'lucide-react'
+import { isLeopardsCN, normalizeCN } from '@/lib/leopards'
 
 interface CopyRefProps {
   label: string // e.g. "Daraz", "TRK"
   value: string
   className?: string
+  // Tracking number: also show a button that opens the same tracking page the customer gets (Leopards only)
+  track?: boolean
 }
 
 // A reference number (order ID / tracking) with a one-tap copy button, e.g. to paste on the courier site
-export default function CopyRef({ label, value, className = '' }: CopyRefProps) {
+export default function CopyRef({ label, value, className = '', track = false }: CopyRefProps) {
   const [copied, setCopied] = useState(false)
 
   const copy = async (e: React.MouseEvent) => {
@@ -36,6 +39,18 @@ export default function CopyRef({ label, value, className = '' }: CopyRefProps) 
       >
         {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
       </button>
+      {track && isLeopardsCN(value) && (
+        <a
+          href={`/track/${normalizeCN(value)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="Open the tracking page (same page the customer gets)"
+          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded font-sans font-semibold text-[10px] text-sky-700 bg-sky-50 hover:bg-sky-100"
+        >
+          <ExternalLink className="h-3 w-3" /> Track
+        </a>
+      )}
     </span>
   )
 }

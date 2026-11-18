@@ -262,6 +262,11 @@ model Sale {
   returnedAt             DateTime?
   returnReceived         Boolean     @default(false)
   returnReceivedAt       DateTime?
+  // Latest courier (Leopards) status, pushed by Leopards to /api/leopards/push (shared by a parcel's products)
+  courierStatus          String?
+  courierStatusCode      String?
+  courierReason          String?
+  courierStatusAt        DateTime?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 

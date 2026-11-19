@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { MAX_ORDER_PHOTOS } from '@/lib/cloudinary'
 import { parseImages } from '@/lib/orderImages'
+import { logOrder, requestActor } from '@/lib/orderLog'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest, { params }: { params: { orderNo
     }
     const { url, publicId, width, height } = parsed.images[0]
     const image = await prisma.orderImage.create({ data: { orderNo, url, publicId, width, height } })
+    await logOrder({ orderNo, action: 'photo', message: 'Photo added', actor: await requestActor(request), details: { url } })
     return NextResponse.json(image, { status: 201 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to save photo' }, { status: 500 })

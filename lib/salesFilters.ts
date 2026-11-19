@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client'
 import { OrderStatus, SupplierPayment, CustomerPayment, CustomerResponse } from '@prisma/client'
 
+// Delivered orders whose review is still to get (shown on the "Reviews" tab)
+export const REVIEW_TODO: Prisma.SaleWhereInput = { status: 'DELIVERED', reviewStatus: { in: ['PENDING', 'CALLED'] } }
+
 // The orders list filters (status tab, date range, search, filter panel) as a Prisma where.
 // Shared by GET /api/sales (the list) and GET /api/sales/counts (the numbers on the status tabs,
 // which use every filter except the status itself).
@@ -11,8 +14,17 @@ export function salesWhere(searchParams: URLSearchParams, opts: { ignoreStatus?:
 
   const where: any = {}
 
-  if (status !== 'ALL') {
+  if (status === 'REVIEWS') {
+    // "Reviews" tab: delivered orders still waiting for a review (not called yet, or called)
+    Object.assign(where, REVIEW_TODO)
+  } else if (status !== 'ALL') {
     where.status = status as OrderStatus
+  }
+  // Filter panel: one review step
+  const reviewStatus = searchParams.get('reviewStatus')
+  if (reviewStatus && ['PENDING', 'CALLED', 'REVIEWED', 'DECLINED'].includes(reviewStatus)) {
+    where.status = 'DELIVERED'
+    where.reviewStatus = reviewStatus
   }
 
   const categoryId = searchParams.get('categoryId')

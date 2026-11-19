@@ -14,10 +14,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const rows = await prisma.sale.findMany({
       where: salesWhere(searchParams, { ignoreStatus: true }),
-      select: { id: true, parcelId: true, status: true },
+      select: { id: true, parcelId: true, status: true, reviewStatus: true },
     })
     const counts: Record<string, number> = { ALL: countOrders(rows) }
     for (const s of STATUSES) counts[s] = countOrders(rows.filter((r) => r.status === s))
+    // "Reviews" tab: delivered, review not got yet
+    counts.REVIEWS = countOrders(
+      rows.filter((r) => r.status === 'DELIVERED' && (r.reviewStatus === 'PENDING' || r.reviewStatus === 'CALLED'))
+    )
     return NextResponse.json(counts)
   } catch (error: any) {
     console.error('Order counts error:', error)

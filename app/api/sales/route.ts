@@ -6,6 +6,7 @@ import { splitByWeight, deliveredProfit } from '@/lib/saleMoney'
 import { parseImages } from '@/lib/orderImages'
 import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 import { notifyOrder, kindForStatus, whatsappByOrder } from '@/lib/whatsapp'
+import { logOrder, requestActor, nameMaps, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
 
 export const dynamic = 'force-dynamic'
 
@@ -266,6 +267,8 @@ export async function POST(request: NextRequest) {
             paymentStatus: 'NOT_RECEIVED',
             profit,
             status: startStatus,
+            // Added as already delivered: the review follow-up starts now
+            ...(startStatus === 'DELIVERED' ? { reviewStatus: 'PENDING' as const, reviewStatusAt: new Date() } : {}),
             deductDeliveryOnReturn: Boolean(deductDeliveryOnReturn),
           },
         })
@@ -297,6 +300,36 @@ export async function POST(request: NextRequest) {
       }
       return rows
     })
+
+    // Order history: created (logged before the WhatsApp message, so it comes first)
+    {
+      const names = await nameMaps()
+      const total = created.reduce((a, s) => a + s.soldPrice * s.quantity, 0)
+      const lead = created[0]
+      await logOrder({
+        ...orderRef(created),
+        action: 'created',
+        message:
+          `Order created: ${lead.customerName} · ${rs(total)} · ${STATUS_WORDS[startStatus]}` +
+          (created.length > 1 ? ` · ${created.length} items` : ''),
+        actor: await requestActor(request),
+        details: {
+          items: created.map((s) => ({ product: s.productName, qty: s.quantity, price: s.soldPrice, cost: s.costPrice })),
+          total,
+          status: startStatus,
+          customer: lead.customerName,
+          phone: lead.customerPhone,
+          city: lead.city,
+          orderFrom: lead.orderSourceId ? names.sources.get(lead.orderSourceId) : null,
+          paymentFrom: lead.paymentSourceId ? names.payments.get(lead.paymentSourceId) : null,
+          receivedBy: lead.receivedById ? names.people.get(lead.receivedById) : null,
+          deliveryCharge: delivery_num || 0,
+          dcPaidBy: dcPaidById ? names.people.get(dcPaidById) : null,
+          orderId: externalOrderId,
+          tracking: trackingNumber,
+        },
+      })
+    }
 
     // WhatsApp the customer (Packing → "confirm your order", Dispatched → "on its way",
     // Delivered → "delivered, please review").

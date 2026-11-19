@@ -9,13 +9,14 @@ import {
   Wallet,
   Settings,
   MessageCircle,
+  History,
   // PlusCircle, // OLD INVENTORY FLOW (Restock button)
   Plus,
   // RefreshCw, // SEED DEMO DATA button
   X,
 } from 'lucide-react'
 
-export const NAV_SECTIONS = ['dashboard', 'orders', 'inventory', 'finance', 'partners-suppliers', 'whatsapp', 'settings'] as const
+export const NAV_SECTIONS = ['dashboard', 'orders', 'inventory', 'finance', 'partners-suppliers', 'whatsapp', 'logs', 'settings'] as const
 export type NavSection = (typeof NAV_SECTIONS)[number]
 
 interface SidebarProps {
@@ -73,6 +74,11 @@ export default function Sidebar({
       id: 'whatsapp' as NavSection,
       label: 'WhatsApp',
       icon: MessageCircle,
+    },
+    {
+      id: 'logs' as NavSection,
+      label: 'Logs',
+      icon: History,
     },
     {
       id: 'settings' as NavSection,

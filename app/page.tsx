@@ -22,6 +22,8 @@ import ExpensesTab from '@/components/ExpensesTab'
 import CityRatesTab from '@/components/CityRatesTab'
 import WhatsAppPage from '@/components/WhatsAppPage'
 import WhatsAppSwitches from '@/components/WhatsAppSwitches'
+import UsersSettings from '@/components/UsersSettings'
+import LogsPage from '@/components/LogsPage'
 // import LedgerTab from '@/components/LedgerTab' // PARTNERS LEDGER — uncomment to restore
 import { Toaster, toast } from 'sonner'
 
@@ -139,6 +141,7 @@ export default function Home() {
       if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
       if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
       if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
+      if (orderFilters.reviewStatus) url += `&reviewStatus=${orderFilters.reviewStatus}`
       // The numbers on the status tabs come with the same filters (all but the status itself)
       const [res, countsRes] = await Promise.all([
         fetch(url),
@@ -358,7 +361,7 @@ export default function Home() {
         method: 'DELETE',
       })
 
-      if (!res.ok) throw new Error('Failed to delete order')
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to delete order')
 
       toast.success('Order deleted successfully')
       refreshAll()
@@ -476,8 +479,11 @@ export default function Home() {
 
       {sectionReady && activeSection === 'whatsapp' && <WhatsAppPage key={refreshKey} />}
 
+      {sectionReady && activeSection === 'logs' && <LogsPage key={refreshKey} />}
+
       {sectionReady && activeSection === 'settings' && (
         <div key={refreshKey} className="space-y-6">
+          <UsersSettings />
           <WhatsAppSwitches />
           <CityRatesTab />
         </div>

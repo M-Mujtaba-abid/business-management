@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { deliveredProfit, saleTotal, splitByWeight } from '@/lib/saleMoney'
+import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
+import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
+import { logOrder, orderRef, requestActor, rs } from '@/lib/orderLog'
 
 // Set the actual amount received for one order (and optionally mark it Received / Not received).
 // For a parcel the amount is the whole parcel's payout, split across its products by sale value.
@@ -46,8 +48,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid payment status' }, { status: 400 })
     }
 
-    const updated = await prisma.$transaction(
-      sales.map((s, i) => {
+    // Lowering the received amount or undoing "Received" cannot leave the person below zero
+    const updated = await withBalanceGuard(async (tx) => {
+      const rows = []
+      for (const [i, s] of sales.entries()) {
         const data: { receivedAmount?: number | null; paymentStatus?: 'RECEIVED' | 'NOT_RECEIVED'; paymentReceivedAt?: Date | null; profit?: number } = {}
         if (payouts) {
           data.receivedAmount = payouts[i]
@@ -57,12 +61,36 @@ export async function PATCH(
           data.paymentStatus = body.status
           data.paymentReceivedAt = body.status === 'RECEIVED' ? s.paymentReceivedAt ?? new Date() : null
         }
-        return prisma.sale.update({ where: { id: s.id }, data })
-      })
-    )
+        rows.push(await tx.sale.update({ where: { id: s.id }, data }))
+      }
+      return rows
+    })
+
+    // Order history
+    {
+      const actor = await requestActor(request)
+      const oldAmount = sales.reduce((a, s) => a + payoutAmount(s), 0)
+      const newAmount = updated.reduce((a, s) => a + payoutAmount(s), 0)
+      const parts: string[] = []
+      if (Math.abs(oldAmount - newAmount) >= 0.5) parts.push(`Amount received: ${rs(oldAmount)} → ${rs(newAmount)}`)
+      if (body.status && body.status !== sales[0].paymentStatus) {
+        parts.push(body.status === 'RECEIVED' ? `Payment marked Received (${rs(newAmount)})` : 'Payment changed back to Not received')
+      }
+      if (parts.length) {
+        await logOrder({
+          ...orderRef(sales),
+          action: 'payment',
+          message: parts.join(' · '),
+          actor,
+          details: { amountFrom: oldAmount, amountTo: newAmount, statusFrom: sales[0].paymentStatus, statusTo: body.status ?? sales[0].paymentStatus },
+        })
+      }
+    }
 
     return NextResponse.json(updated.find((s) => s.id === params.id) ?? updated[0])
   } catch (error: any) {
+    const blocked = balanceErrorResponse(error)
+    if (blocked) return NextResponse.json(blocked, { status: 400 })
     return NextResponse.json({ error: error.message || 'Failed to update payment' }, { status: 500 })
   }
 }

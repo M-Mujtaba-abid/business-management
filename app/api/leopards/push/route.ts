@@ -1,19 +1,13 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
-import { classifyCourierStatus, isLeopardsCN, normalizeCN, parseLeopardsDate } from '@/lib/leopards'
-import { changeParcelStatus } from '@/lib/orderStatus'
+import { isLeopardsCN, normalizeCN, parseLeopardsDate } from '@/lib/leopards'
+import { applyCourierStatus } from '@/lib/courierUpdate'
 
 // Leopards Push API (v1.0): Leopards POSTs every status change of our parcels here.
 //   { "data": [ { "cn_number", "status", "receiver_name", "reason", "activity_date" } ] }
 // Reply: 202 [{ status: 1, errors: [] }], 401 when the secret is wrong, 400 for a bad body.
 //
-// What we do with a status (for orders whose tracking number matches):
-//  - always: save it on the order (courierStatus...), shown as a badge on the Orders page
-//  - picked up / dispatched / arrived / out for delivery, and the order is still Packing → Dispatched
-//  - delivered, and the order is Packing / Dispatched → Delivered (the customer gets the Delivered message)
-//  - being returned / returned → only the badge; marking Returned stays a manual step, because it
-//    books a return loss and can put covers back in stock
+// What we do with a status: see lib/courierUpdate.ts (shared with the daily "Check Leopards" sync)
 
 export const dynamic = 'force-dynamic'
 
@@ -71,42 +65,14 @@ export async function POST(req: NextRequest) {
         errors.push(`Invalid cn_number: ${clip(item?.cn_number, 30)}`)
         continue
       }
-      const sales = await prisma.sale.findMany({
-        where: { trackingNumber: { equals: cn, mode: 'insensitive' } },
-        orderBy: { createdAt: 'asc' },
+      const result = await applyCourierStatus({
+        cn,
+        status: item?.status,
+        at: parseLeopardsDate(item?.activity_date) || new Date(),
+        receiver: item?.receiver_name,
+        reason: item?.reason,
       })
-      if (sales.length === 0) continue // not one of our orders (or not saved yet): nothing to do
-      matched++
-
-      const st = classifyCourierStatus(item?.status)
-      const at = parseLeopardsDate(item?.activity_date) || new Date()
-      const receiver = clip(item?.receiver_name, 80)
-      const reason = clip(item?.reason, 200)
-      const note = st.kind === 'delivered' && receiver ? `Received by ${receiver}` : reason
-
-      // An older status arriving late must not overwrite a newer one
-      const newest = sales.reduce<Date | null>((m, s) => (s.courierStatusAt && (!m || s.courierStatusAt > m) ? s.courierStatusAt : m), null)
-      if (newest && at < newest) continue
-
-      await prisma.sale.updateMany({
-        where: { id: { in: sales.map((s) => s.id) } },
-        data: { courierStatus: st.label, courierStatusCode: st.code, courierReason: note || null, courierStatusAt: at },
-      })
-
-      // A tracking number normally belongs to one order (one parcel); handle each order separately just in case
-      const byOrder = new Map<string, typeof sales>()
-      for (const s of sales) {
-        const key = s.parcelId || (s.orderNo != null ? `#${s.orderNo}` : s.id)
-        byOrder.set(key, [...(byOrder.get(key) || []), s])
-      }
-      for (const parcel of Array.from(byOrder.values())) {
-        const current = parcel[0].status
-        if (st.kind === 'delivered' && (current === 'PACKING' || current === 'DISPATCHED')) {
-          await changeParcelStatus(parcel, { status: 'DELIVERED' })
-        } else if ((st.kind === 'transit' || st.kind === 'out') && current === 'PACKING') {
-          await changeParcelStatus(parcel, { status: 'DISPATCHED' })
-        }
-      }
+      if (result !== 'no-order') matched++ // 'no-order': not one of our orders (or not saved yet)
     } catch (err: any) {
       console.error('Leopards push item failed:', cn, err)
       errors.push(`${cn}: ${err?.message || 'failed'}`)

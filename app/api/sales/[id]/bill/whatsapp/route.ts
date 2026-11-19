@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { loadBill, renderBillPng, billTotals, SHOP } from '@/lib/bill'
 import prisma from '@/lib/prisma'
 import { sendBill, whatsappBlockedFor } from '@/lib/whatsapp'
+import { logOrder, requestActor, rs } from '@/lib/orderLog'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,6 +36,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const png = await renderBillPng(bill)
     const caption = `🧾 ${SHOP.name} bill: Order #${bill.orderNo}\nTotal: Rs ${Math.round(billTotals(bill).total).toLocaleString('en-US')}`
     const error = await sendBill(bill.orderNo, bill.customerPhone, png, caption)
+    await logOrder({
+      orderNo: bill.orderNo,
+      action: 'bill',
+      message: error ? `Bill could not be sent: ${error}` : `Bill sent to WhatsApp for the customer · total ${rs(billTotals(bill).total)}`,
+      actor: await requestActor(request),
+      details: { delivery, total: billTotals(bill).total, ...(error ? { error } : {}) },
+    })
     if (error) return NextResponse.json({ error }, { status: 502 })
     return NextResponse.json({ ok: true, queued: true })
   } catch (error: any) {

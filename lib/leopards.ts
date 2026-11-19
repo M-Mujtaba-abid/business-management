@@ -48,12 +48,13 @@ const cache = new Map<string, { at: number; result: TrackResult }>()
 
 const text = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '')
 
-export async function trackPacket(cnInput: string): Promise<TrackResult> {
+// fresh: skip the 10-minute cache (the status sync wants Leopards' latest answer)
+export async function trackPacket(cnInput: string, opts: { fresh?: boolean } = {}): Promise<TrackResult> {
   const cn = normalizeCN(cnInput)
   if (!leopardsEnabled()) return { ok: false, reason: 'not-configured' }
 
   const hit = cache.get(cn)
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.result
+  if (!opts.fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.result
 
   let result: TrackResult
   try {

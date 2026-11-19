@@ -1,8 +1,13 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Sidebar, { NavSection } from './Sidebar'
-import { Menu, Calendar, ChevronDown, RefreshCw } from 'lucide-react'
+import { Menu, Calendar, ChevronDown, RefreshCw, LogOut } from 'lucide-react'
+
+const logout = async () => {
+  await fetch('/api/auth/login', { method: 'DELETE' }).catch(() => {})
+  window.location.href = '/login'
+}
 
 interface AppShellProps {
   currentSection: NavSection
@@ -43,6 +48,19 @@ export default function AppShell({
   children,
 }: AppShellProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+
+  // Who is logged in (shown next to Log out)
+  const [userName, setUserName] = useState('')
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => {
+        // Login expired or the user was removed: back to the login page
+        if (r.status === 401) logout()
+        return r.ok ? r.json() : null
+      })
+      .then((u) => u?.name && setUserName(u.name))
+      .catch(() => {})
+  }, [])
   const [isFilterOpen, setIsFilterOpen] = useState(false)
 
   const getSectionTitle = () => {
@@ -59,6 +77,8 @@ export default function AppShell({
         return 'Payments'
       case 'whatsapp':
         return 'WhatsApp'
+      case 'logs':
+        return 'Logs'
       case 'settings':
         return 'Settings'
       default:
@@ -78,6 +98,8 @@ export default function AppShell({
         return 'Who has the money, what is still to come, and what you owe suppliers'
       case 'whatsapp':
         return 'Link the number, edit customer messages and read chats'
+      case 'logs':
+        return 'Who did what to each order, and when (by hand and automatic)'
       case 'settings':
         return 'WhatsApp on / off, categories and delivery rates'
       default:
@@ -299,6 +321,16 @@ export default function AppShell({
                   <span className="hidden sm:inline">{isRefreshing ? 'Refreshing…' : 'Refresh'}</span>
                 </button>
               )}
+
+              <button
+                onClick={logout}
+                title={userName ? `Logged in as ${userName}. Log out` : 'Log out'}
+                aria-label="Log out"
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:text-rose-700 hover:border-rose-200 transition"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">{userName ? `${userName} · Log out` : 'Log out'}</span>
+              </button>
 
               {/* Inline date filter on wide screens */}
               <div className="hidden xl:block">{dateFilter}</div>

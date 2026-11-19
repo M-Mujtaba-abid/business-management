@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { WHATSAPP, WA_KIND_WORDS, logOrder } from '@/lib/orderLog'
 import {
   verifySignature,
   parseReply,
@@ -75,6 +76,20 @@ export async function POST(request: NextRequest) {
             ? { status: 'SENT', waMessageId: evt.messageId, sentAt: new Date(), error: null, scheduledFor: null }
             : { status: 'FAILED', error: String(evt.error || 'Unknown error').slice(0, 500) },
       })
+      // Order history: sent / failed
+      const logged = await prisma.whatsAppMessage.findUnique({ where: { id: evt.refId }, select: { orderNo: true, kind: true } })
+      if (logged) {
+        await logOrder({
+          orderNo: logged.orderNo,
+          action: evt.type === 'sent' ? 'whatsapp_sent' : 'whatsapp_failed',
+          message:
+            evt.type === 'sent'
+              ? `WhatsApp ${WA_KIND_WORDS[logged.kind] || 'message'} sent${evt.poll ? ' (with Confirm / Cancel poll)' : ''}`
+              : `WhatsApp ${WA_KIND_WORDS[logged.kind] || 'message'} failed: ${String(evt.error || 'Unknown error').slice(0, 200)}`,
+          actor: WHATSAPP,
+          details: { kind: logged.kind, ...(evt.type === 'failed' ? { error: String(evt.error || '') } : { messageId: evt.messageId }) },
+        })
+      }
       if (evt.type === 'sent') {
         const msg = await prisma.whatsAppMessage.findUnique({ where: { id: evt.refId } })
         if (msg) {

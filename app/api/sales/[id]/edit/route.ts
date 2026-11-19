@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
 import { deliveredProfit, payoutAmount, saleTotal, splitByWeight } from '@/lib/saleMoney'
 import { cleanRef, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 import { parseImages } from '@/lib/orderImages'
 import { destroyPhoto } from '@/lib/cloudinary'
+import type { Sale } from '@prisma/client'
+import { logOrder, nameMaps, orderRef, requestActor, rs } from '@/lib/orderLog'
 
 // Sentinel: the form did not send a photo list, so photos stay as they are
 const NO_PHOTO_CHANGE: { images: never[] } = { images: [] }
 
 // Makes the order's saved photos match the list from the form: removed ones are deleted
 // (database + Cloudinary), new ones are added. Missing list = photos untouched.
-async function syncPhotos(orderNo: number | null, images: ReturnType<typeof parseImages>) {
-  if (orderNo == null || 'error' in images || images === NO_PHOTO_CHANGE) return
+async function syncPhotos(orderNo: number | null, images: ReturnType<typeof parseImages>): Promise<{ added: number; removed: number }> {
+  if (orderNo == null || 'error' in images || images === NO_PHOTO_CHANGE) return { added: 0, removed: 0 }
   const saved = await prisma.orderImage.findMany({ where: { orderNo } })
   const keep = new Set(images.images.map((i) => i.id).filter(Boolean) as string[])
   const removed = saved.filter((p) => !keep.has(p.id))
   const added = images.images.filter((i) => !i.id || !saved.some((p) => p.id === i.id))
+  if (!removed.length && !added.length) return { added: 0, removed: 0 }
   await prisma.$transaction([
     prisma.orderImage.deleteMany({ where: { id: { in: removed.map((p) => p.id) } } }),
     prisma.orderImage.createMany({
@@ -23,6 +27,68 @@ async function syncPhotos(orderNo: number | null, images: ReturnType<typeof pars
     }),
   ])
   await Promise.all(removed.map((p) => destroyPhoto(p.publicId)))
+  return { added: added.length, removed: removed.length }
+}
+
+// Order history for an edit: every field that really changed, in words ("Phone: 0300… → 0301…")
+async function logEdit(request: NextRequest, before: Sale[], after: Sale[], photos: { added: number; removed: number }) {
+  const names = await nameMaps()
+  const a = before[0]
+  const b = after[0]
+  const changes: string[] = []
+  const diff: Record<string, { from: unknown; to: unknown }> = {}
+  const note = (label: string, from: unknown, to: unknown, show = (v: unknown) => String(v ?? '—')) => {
+    if ((from ?? null) === (to ?? null)) return
+    changes.push(`${label}: ${show(from)} → ${show(to)}`)
+    diff[label] = { from: from ?? null, to: to ?? null }
+  }
+  const nm = (map: Map<string, string>) => (id: unknown) => (id ? map.get(String(id)) || '?' : '—')
+  const sum = (rows: Sale[], f: (s: Sale) => number) => Math.round(rows.reduce((x, s) => x + f(s), 0) * 100) / 100
+
+  note('Customer', a.customerName, b.customerName)
+  note('Phone', a.customerPhone, b.customerPhone)
+  note('City', a.city, b.city)
+  note('Address', a.address, b.address)
+  note('Order from', a.orderSourceId, b.orderSourceId, nm(names.sources))
+  note('Payment from', a.paymentSourceId, b.paymentSourceId, nm(names.payments))
+  note('Money goes to', a.receivedById, b.receivedById, nm(names.people))
+  note('Order ID', a.externalOrderId, b.externalOrderId)
+  note('Tracking', a.trackingNumber, b.trackingNumber)
+  note('Order date', a.createdAt.toISOString().slice(0, 10), b.createdAt.toISOString().slice(0, 10))
+  note('Delivery charge', sum(before, (s) => s.deliveryCharge), sum(after, (s) => s.deliveryCharge), (v) => rs(Number(v)))
+  note('DC paid by', a.dcPaidById, b.dcPaidById, nm(names.people))
+  note('Petrol', sum(before, (s) => s.petrolCost), sum(after, (s) => s.petrolCost), (v) => rs(Number(v)))
+  note('GST', sum(before, (s) => s.gstAmount), sum(after, (s) => s.gstAmount), (v) => rs(Number(v)))
+
+  // Products: added, removed, and changes on the ones kept
+  const afterIds = new Set(after.map((s) => s.id))
+  const beforeById = new Map(before.map((s) => [s.id, s]))
+  for (const s of before.filter((x) => !afterIds.has(x.id))) changes.push(`Removed product: ${s.productName} ×${s.quantity}`)
+  for (const s of after) {
+    const p = beforeById.get(s.id)
+    if (!p) {
+      changes.push(`Added product: ${s.productName} ×${s.quantity} @ ${rs(s.soldPrice)}`)
+      continue
+    }
+    const label = after.length > 1 ? `${s.productName}: ` : ''
+    note(`${label}Product`, p.productName, s.productName)
+    note(`${label}Qty`, p.quantity, s.quantity)
+    note(`${label}Sale price`, p.soldPrice, s.soldPrice, (v) => rs(Number(v)))
+    note(`${label}Buy price`, p.costPrice, s.costPrice, (v) => rs(Number(v)))
+    note(`${label}Supplier`, p.supplierId, s.supplierId, nm(names.suppliers))
+    note(`${label}Category`, p.categoryId, s.categoryId, nm(names.categories))
+  }
+  if (photos.added) changes.push(`${photos.added} photo${photos.added > 1 ? 's' : ''} added`)
+  if (photos.removed) changes.push(`${photos.removed} photo${photos.removed > 1 ? 's' : ''} removed`)
+
+  if (!changes.length) return
+  await logOrder({
+    ...orderRef(before),
+    action: 'edited',
+    message: `Order edited: ${changes.join(' · ')}`,
+    actor: await requestActor(request),
+    details: { changes: diff, totalBefore: sum(before, saleTotal), totalAfter: sum(after, saleTotal) },
+  })
 }
 
 
@@ -126,7 +192,8 @@ export async function PUT(
           })
         )
       )
-      await syncPhotos(lead.orderNo, photos)
+      const photoChange = await syncPhotos(lead.orderNo, photos)
+      await logEdit(request, existing, updated, photoChange)
       return NextResponse.json({ sales: updated })
     }
 
@@ -196,7 +263,8 @@ export async function PUT(
       })
     }
 
-    const saved = await prisma.$transaction(async (tx) => {
+    // Changing "Received by", DC person or amounts cannot leave anyone below zero
+    const saved = await withBalanceGuard(async (tx) => {
       // Removed products: their returned cover goes back to returned stock, then the row goes
       for (const s of removed) {
         if (s.returnedItemId) {
@@ -264,6 +332,8 @@ export async function PUT(
                 profit,
                 // a new product joins the order in the same state as the rest
                 status: lead.status,
+                reviewStatus: lead.reviewStatus,
+                reviewStatusAt: lead.reviewStatusAt,
                 paymentStatus: lead.paymentStatus,
                 paymentReceivedAt: lead.paymentReceivedAt,
                 deductDeliveryOnReturn: lead.deductDeliveryOnReturn,
@@ -283,9 +353,12 @@ export async function PUT(
       return rows
     })
 
-    await syncPhotos(lead.orderNo, photos)
+    const photoChange = await syncPhotos(lead.orderNo, photos)
+    await logEdit(request, existing, saved, photoChange)
     return NextResponse.json({ parcelId, sales: saved, totalSale: saved.reduce((a, s) => a + saleTotal(s), 0) })
   } catch (error: any) {
+    const blocked = balanceErrorResponse(error)
+    if (blocked) return NextResponse.json(blocked, { status: 400 })
     console.error('Edit order error:', error)
     return NextResponse.json({ error: error.message || 'Failed to save changes' }, { status: 500 })
   }

@@ -8,8 +8,12 @@ import CopyRef from './ui/CopyRef'
 import { CustomerReplyBadge, WhatsAppMsgStatus, BillStatus, CustomerResponse, WhatsAppMsg } from './ui/WhatsAppStatus'
 import { WhatsAppChatButton } from './WhatsAppChat'
 import ReturnReceivedToggle from './ui/ReturnReceivedToggle'
-import CourierBadge from './ui/CourierBadge'
+import CourierBadge, { CourierCell } from './ui/CourierBadge'
 import { BillButton } from './BillDialog'
+import ReviewFollowUp, { ReviewStatus, REVIEW_STEPS } from './ui/ReviewFollowUp'
+import CheckLeopardsButton from './ui/CheckLeopardsButton'
+import { OrderHistoryButton } from './OrderHistory'
+import { LeopardsMoneyButton, CourierMoney } from './ui/LeopardsMoney'
 import { groupSales, groupAsSale, OrderGroup } from '@/lib/parcels'
 
 export type SupplierPaymentStatus = 'PENDING' | 'PAID' | 'NOT_APPLICABLE'
@@ -65,6 +69,15 @@ export interface Sale {
   returnedAt?: string | null // when it was marked Returned
   returnReceived?: boolean // returned parcel physically back with us
   returnReceivedAt?: string | null
+  reviewStatus?: ReviewStatus // review follow-up after delivery
+  reviewStatusAt?: string | null
+  // Leopards money for the parcel (filled by the Leopards check)
+  courierCod?: number | null
+  courierCharges?: number | null
+  courierPayout?: number | null
+  courierPayment?: string | null
+  courierMoney?: CourierMoney | null
+  courierMoneyAt?: string | null
 }
 
 export interface OrderFilters {
@@ -79,6 +92,7 @@ export interface OrderFilters {
   paymentStatus: string // '' | 'NOT_RECEIVED' | 'RECEIVED'
   customerResponse: string // '' | 'PENDING' | 'CONFIRMED' | 'CANCELLED' (WhatsApp reply)
   returnState: string // '' | 'PENDING' (returned, parcel not back yet) | 'RECEIVED'
+  reviewStatus: string // '' | 'PENDING' | 'CALLED' | 'REVIEWED' | 'DECLINED'
 }
 
 export const EMPTY_ORDER_FILTERS: OrderFilters = {
@@ -93,6 +107,7 @@ export const EMPTY_ORDER_FILTERS: OrderFilters = {
   paymentStatus: '',
   customerResponse: '',
   returnState: '',
+  reviewStatus: '',
 }
 
 interface Option {
@@ -401,6 +416,8 @@ export default function OrderList({
     { label: 'Packing', value: 'PACKING', dot: 'bg-amber-500' },
     { label: 'Dispatched', value: 'DISPATCHED', dot: 'bg-blue-500' },
     { label: 'Delivered', value: 'DELIVERED', dot: 'bg-emerald-500' },
+    // delivered orders whose review is still to get (pending or called)
+    { label: 'Reviews', value: 'REVIEWS', dot: 'bg-yellow-400' },
     { label: 'Returned', value: 'RETURNED', dot: 'bg-rose-500' },
     { label: 'Cancelled', value: 'CANCELLED', dot: 'bg-slate-400' },
   ]
@@ -490,6 +507,7 @@ export default function OrderList({
               )}
               <ChevronDown className={`h-3.5 w-3.5 transition ${showFilters ? 'rotate-180' : ''}`} />
             </button>
+            <CheckLeopardsButton onChanged={onChanged} />
           </div>
         </div>
 
@@ -586,6 +604,21 @@ export default function OrderList({
               >
                 Return not received yet
               </button>
+              <select
+                value={filters.reviewStatus}
+                onChange={(e) => setFilters({ ...filters, reviewStatus: e.target.value })}
+                title="Review follow-up"
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition focus:outline-none ${
+                  filters.reviewStatus ? 'bg-yellow-400/15 text-yellow-800 border-yellow-500/40' : 'bg-white text-slate-600 border-slate-200'
+                }`}
+              >
+                <option value="">Review: any</option>
+                {REVIEW_STEPS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    Review: {s.label}
+                  </option>
+                ))}
+              </select>
               {hasFilters && (
                 <button
                   onClick={() => setFilters(EMPTY_ORDER_FILTERS)}
@@ -722,6 +755,18 @@ export default function OrderList({
                             <CourierBadge status={sale.courierStatus} code={sale.courierStatusCode} reason={sale.courierReason} at={sale.courierStatusAt} />
                           </div>
                         )}
+                        {sale.courierPayout != null && (
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <LeopardsMoneyButton
+                              payout={sale.courierPayout}
+                              payment={sale.courierPayment}
+                              money={sale.courierMoney}
+                              checkedAt={sale.courierMoneyAt}
+                              orderNo={sale.orderNo}
+                              orderTotal={g.saleTotal}
+                            />
+                          </div>
+                        )}
                         {customerLine(sale)}
                         {(sale.customerResponse && sale.customerResponse !== 'NONE') || sale.whatsapp?.length ? (
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5" onClick={(e) => e.stopPropagation()}>
@@ -750,6 +795,15 @@ export default function OrderList({
                             onChanged={onChanged}
                           />
                         )}
+                        <ReviewFollowUp
+                          compact
+                          ids={g.ids}
+                          status={sale.reviewStatus}
+                          at={sale.reviewStatusAt}
+                          phone={sale.customerPhone}
+                          orderStatus={sale.status}
+                          onChanged={onChanged}
+                        />
                       </div>
                       <div className="space-y-1 min-w-0">
                         <div className="text-[10px] text-slate-400 uppercase font-medium tracking-wide truncate">
@@ -774,6 +828,9 @@ export default function OrderList({
                       <div className="flex-1 flex [&>button]:flex-1 [&>button]:py-2 [&>button]:rounded-xl [&>button]:text-[11px]">
                         <BillButton sale={sale} variant="full" />
                       </div>
+                      <div className="flex-1 flex [&>button]:flex-1">
+                        <OrderHistoryButton variant="full" orderNo={sale.orderNo} saleId={sale.id} title={`${sale.customerName} · ${formatPKR(g.saleTotal)}`} />
+                      </div>
                     </div>
                   </div>
                 )
@@ -782,7 +839,7 @@ export default function OrderList({
 
             {/* ── Desktop: table (photo · date · order · amount · status · payment · supplier) ── */}
             <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[1040px] table-fixed text-left text-xs text-slate-700">
+              <table className="w-full min-w-[1180px] table-fixed text-left text-xs text-slate-700">
                 {/* fixed widths keep the right-side columns compact so Edit stays visible without scrolling */}
                 <colgroup>
                   <col className="w-9" />
@@ -791,7 +848,8 @@ export default function OrderList({
                   <col />
                   <col className="w-[150px]" />
                   <col className="w-[100px]" />
-                  <col className="w-[128px]" />
+                  <col className="w-[148px]" />
+                  <col className="w-[120px]" />
                   <col className="w-[124px]" />
                   <col className="w-[100px]" />
                   <col className="w-[48px]" />
@@ -813,21 +871,24 @@ export default function OrderList({
                     <th className="px-2 py-2.5">WhatsApp</th>
                     <th className="px-2 py-2.5">Amount</th>
                     <th className="px-2 py-2.5">Status</th>
+                    <th className="px-2 py-2.5">Leopards</th>
                     <th className="px-2 py-2.5">Payment</th>
                     <th className="px-2 py-2.5">Supplier</th>
                     <th className="pr-3 pl-1 py-2.5 text-right">Edit</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.map((g) => {
+                  {groups.map((g, rowIndex) => {
                     const sale = g.lead
                     const isSelected = g.ids.every((id) => selectedIds.includes(id))
+                    // Striped rows: every second order is light grey so rows are easy to tell apart
+                    const stripe = rowIndex % 2 === 1 ? 'bg-slate-100/80' : 'bg-white'
                     return (
                       <tr
                         key={g.key}
                         onClick={() => onSelectOrder(sale)}
-                        className={`cursor-pointer border-b border-slate-100 last:border-b-0 group/row transition-colors ${
-                          isSelected ? 'bg-emerald-50/60 hover:bg-emerald-50' : 'bg-white hover:bg-slate-50'
+                        className={`cursor-pointer border-b border-slate-200 last:border-b-0 group/row transition-colors ${
+                          isSelected ? 'bg-emerald-50 hover:bg-emerald-100/70' : `${stripe} hover:bg-sky-50`
                         }`}
                       >
                         <td className="pl-3 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -878,7 +939,6 @@ export default function OrderList({
                             <div className="flex flex-wrap gap-x-3 mt-0.5" onClick={(e) => e.stopPropagation()}>
                               {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
                               {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track />}
-                            <CourierBadge status={sale.courierStatus} code={sale.courierStatusCode} reason={sale.courierReason} at={sale.courierStatusAt} />
                             </div>
                           )}
                           <div className="mt-0.5">{customerLine(sale)}</div>
@@ -908,8 +968,8 @@ export default function OrderList({
                           <div className="text-[11px] font-semibold mt-0.5">{amountNote(g)}</div>
                         </td>
 
-                        {/* Status */}
-                        <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                        {/* Status (overflow-hidden: nothing may spill into the Leopards column) */}
+                        <td className="px-2 py-2.5 overflow-hidden" onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-col items-start gap-1 min-w-0" onClick={() => onSelectOrder(sale)}>
                             <StatusBadge status={sale.status} />
                           </div>
@@ -925,6 +985,45 @@ export default function OrderList({
                               />
                             </div>
                           )}
+                          <div className="mt-1">
+                            <ReviewFollowUp
+                              compact
+                              ids={g.ids}
+                              status={sale.reviewStatus}
+                              at={sale.reviewStatusAt}
+                              phone={sale.customerPhone}
+                              orderStatus={sale.status}
+                              onChanged={onChanged}
+                            />
+                          </div>
+                        </td>
+
+                        {/* Leopards: latest courier status, when, and its note */}
+                        <td className="px-2 py-2.5 align-middle overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                          <CourierCell
+                            trackingNumber={sale.trackingNumber}
+                            status={sale.courierStatus}
+                            code={sale.courierStatusCode}
+                            reason={sale.courierReason}
+                            at={sale.courierStatusAt}
+                          />
+                          <LeopardsMoneyButton
+                            payout={sale.courierPayout}
+                            payment={sale.courierPayment}
+                            money={sale.courierMoney}
+                            checkedAt={sale.courierMoneyAt}
+                            orderNo={sale.orderNo}
+                            orderTotal={g.saleTotal}
+                          />
+                          {/* Delivered Leopards parcel whose money was not fetched yet */}
+                          {sale.status === 'DELIVERED' &&
+                            sale.paymentStatus === 'NOT_RECEIVED' &&
+                            sale.courierPayout == null &&
+                            /^[A-Z]{2}\d{10}$/i.test((sale.trackingNumber || '').trim()) && (
+                              <div className="mt-1 text-[10px] leading-snug text-slate-400" title="Press Check Leopards (or wait for the daily check at 6 pm)">
+                                Money: not checked yet
+                              </div>
+                            )}
                         </td>
 
                         {/* Payment: source → person, received or not */}
@@ -953,6 +1052,7 @@ export default function OrderList({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <BillButton sale={sale} />
+                            <OrderHistoryButton orderNo={sale.orderNo} saleId={sale.id} title={`${sale.customerName} · ${formatPKR(g.saleTotal)}`} />
                           </div>
                         </td>
                       </tr>

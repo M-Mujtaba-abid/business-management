@@ -43,6 +43,24 @@ enum CustomerPayment {
   NOT_APPLICABLE
 }
 
+// Who did something to an order (order history)
+enum LogSource {
+  USER      // someone logged in to the app
+  LEOPARDS  // Leopards push / our Leopards check
+  WHATSAPP  // WhatsApp service (message sent / failed)
+  CUSTOMER  // the customer (WhatsApp reply / vote)
+  SYSTEM    // the app itself (automatic rules, history filled in from older records)
+}
+
+// Asking a delivered order's customer for a review (call them, then note what happened)
+enum ReviewStatus {
+  NONE      // not delivered (nothing to ask yet)
+  PENDING   // delivered, nobody has called yet
+  CALLED    // called the customer and asked for a review
+  REVIEWED  // the customer wrote the review
+  DECLINED  // no answer / did not want to review
+}
+
 // Customer's WhatsApp reply to the "confirm your order" message
 enum CustomerResponse {
   NONE
@@ -145,6 +163,23 @@ model Person {
   dcSales     Sale[]       @relation("DcPaidBy")
   expenses    Expense[]
   withdrawals Withdrawal[]
+  users       User[]
+}
+
+// Someone who can log in to the app. Passwords are stored only as a scrypt hash
+// ("scrypt$<salt hex>$<hash hex>"); create / change them with scripts/set-user.js.
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique // stored lower-case
+  name         String
+  passwordHash String
+  personId     String? // the money person this login belongs to (optional)
+  person       Person?   @relation(fields: [personId], references: [id], onDelete: SetNull)
+  // Goes up when the password changes: every login made before that stops working
+  sessionVersion Int     @default(1)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 // Money a person takes out of the business money they hold
@@ -267,6 +302,21 @@ model Sale {
   courierStatusCode      String?
   courierReason          String?
   courierStatusAt        DateTime?
+  // Leopards money for the whole parcel (from Leopards' getShippingCharges + getPaymentDetails):
+  //   courierCod      cash Leopards collected from the customer
+  //   courierCharges  everything Leopards deducts (delivery, GST, fuel, ...)
+  //   courierPayout   courierCod - courierCharges = what Leopards pays us
+  //   courierPayment  NOT_INVOICED | PENDING (invoice made, not paid) | PAID | Leopards' own word
+  //   courierMoney    the full breakdown + invoice no / date / method, for the popup
+  courierCod             Float?
+  courierCharges         Float?
+  courierPayout          Float?
+  courierPayment         String?
+  courierMoney           Json?
+  courierMoneyAt         DateTime?
+  // Review follow-up (shared by a parcel's products). Becomes PENDING when the order is delivered.
+  reviewStatus           ReviewStatus @default(NONE)
+  reviewStatusAt         DateTime?
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
@@ -282,6 +332,7 @@ model Sale {
   @@index([city])
   @@index([status])
   @@index([status, returnReceived])
+  @@index([reviewStatus])
   @@index([categoryId])
   @@index([supplierId])
   @@index([supplierPaymentStatus])
@@ -389,4 +440,22 @@ model AppSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// Order history: one line per thing that happened to an order, by hand or automatically.
+// Kept when an order is deleted (orderNo / saleId are plain values, not relations).
+model OrderLog {
+  id        String    @id @default(cuid())
+  orderNo   Int?      // the order (all products of a parcel share it)
+  saleId    String?   // lead product row, for older orders without an order number
+  action    String    // short code, e.g. created, status, payment, leopards_status, whatsapp_sent
+  message   String    // what happened, in words
+  source    LogSource
+  actor     String?   // who: user name, "Leopards", "WhatsApp", customer name...
+  details   Json?     // before / after values and other facts
+  createdAt DateTime  @default(now())
+
+  @@index([orderNo, createdAt])
+  @@index([saleId])
+  @@index([createdAt])
 }

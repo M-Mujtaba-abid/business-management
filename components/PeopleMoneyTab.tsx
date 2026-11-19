@@ -142,6 +142,12 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
       toast.error('Enter a valid amount')
       return
     }
+    // Quick check here; the server checks again before saving
+    const person = summary.find((s) => s.id === withdrawFor)
+    if (person && amt > person.inHand + 0.5) {
+      toast.error(`${person.name} has only ${formatPKR(Math.max(0, person.inHand))} in hand. Cannot withdraw more than that.`)
+      return
+    }
     setIsSaving(true)
     try {
       const res = await fetch('/api/withdrawals', {
@@ -343,6 +349,9 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                         placeholder="Amount (Rs)"
                         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-rose-500"
                       />
+                      <div className="text-[11px] text-slate-500">
+                        Max you can withdraw: <span className="font-mono font-semibold text-slate-700">{formatPKR(Math.max(0, p.inHand))}</span>
+                      </div>
                       <input
                         type="text"
                         value={wReason}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-  X, MapPin, Package, Trash2, Camera, CheckCircle2, RotateCcw, XCircle, Wallet, Banknote, Pencil, Truck, Hash, Save, Recycle,
+  X, MapPin, Package, Trash2, Camera, CheckCircle2, RotateCcw, XCircle, Wallet, Banknote, Pencil, Truck, Hash, Save, Recycle, Star,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import StatusBadge from './StatusBadge'
@@ -13,6 +13,8 @@ import { groupSales } from '@/lib/parcels'
 import { formatDateTime } from '@/lib/format'
 import PhotoPicker from './PhotoPicker'
 import ReturnReceivedToggle from './ReturnReceivedToggle'
+import ReviewFollowUp from './ReviewFollowUp'
+import { OrderHistoryButton } from '../OrderHistory'
 import { BillButton } from '../BillDialog'
 import { OrderPhoto, discardOrderPhoto } from '@/lib/photoUpload'
 
@@ -246,6 +248,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                       {lead.orderSource.name}
                     </span>
                   )}
+                  <OrderHistoryButton variant="full" orderNo={lead.orderNo} saleId={lead.id} title={`${lead.customerName}`} />
                 </div>
                 <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 break-words">
                   {isParcel ? group.items.map((i) => i.productName).join(', ') : lead.productName}
@@ -350,6 +353,26 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                 </div>
               )}
             </section>
+
+            {/* Review follow-up (delivered orders) */}
+            {lead.status === 'DELIVERED' && lead.reviewStatus && lead.reviewStatus !== 'NONE' && (
+              <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Star className="h-3.5 w-3.5 text-yellow-500" /> Review
+                  <span className="normal-case font-normal text-slate-400">
+                    · {lead.customerPhone ? `call ${lead.customerName} on ${lead.customerPhone}` : 'no phone number saved'}
+                  </span>
+                </h3>
+                <ReviewFollowUp
+                  ids={group.ids}
+                  status={lead.reviewStatus}
+                  at={lead.reviewStatusAt}
+                  phone={lead.customerPhone}
+                  orderStatus={lead.status}
+                  onChanged={onSaved}
+                />
+              </section>
+            )}
 
             {/* Payment */}
             {tracksPayment && (

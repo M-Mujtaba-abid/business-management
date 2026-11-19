@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { ExpenseCategory, FundingSource } from '@prisma/client'
+import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,33 +46,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Please enter a valid expense amount.' }, { status: 400 })
     }
 
-    const expense = await prisma.expense.create({
-      data: {
-        title: title.trim(),
-        amount: amt,
-        category: category as ExpenseCategory,
-        fundingSource: fundingSource as FundingSource,
-        partnerId: fundingSource === 'PERSONAL_CAPITAL' && partnerId ? partnerId : null,
-        note: note ? note.trim() : null,
-        paidById: paidById || null,
-      },
-      include: { partner: true, paidBy: true },
-    })
-
-    // If Personal Capital, increment Partner's total capital invested
-    if (fundingSource === 'PERSONAL_CAPITAL' && partnerId) {
-      await prisma.partner.update({
-        where: { id: partnerId },
+    // An expense paid from a person's money cannot be more than they hold
+    const expense = await withBalanceGuard(async (tx) => {
+      const created = await tx.expense.create({
         data: {
-          totalCapitalInvested: {
-            increment: amt,
-          },
+          title: title.trim(),
+          amount: amt,
+          category: category as ExpenseCategory,
+          fundingSource: fundingSource as FundingSource,
+          partnerId: fundingSource === 'PERSONAL_CAPITAL' && partnerId ? partnerId : null,
+          note: note ? note.trim() : null,
+          paidById: paidById || null,
         },
+        include: { partner: true, paidBy: true },
       })
-    }
+
+      // If Personal Capital, increment Partner's total capital invested
+      if (fundingSource === 'PERSONAL_CAPITAL' && partnerId) {
+        await tx.partner.update({
+          where: { id: partnerId },
+          data: {
+            totalCapitalInvested: {
+              increment: amt,
+            },
+          },
+        })
+      }
+      return created
+    })
 
     return NextResponse.json(expense, { status: 201 })
   } catch (error: any) {
+    const blocked = balanceErrorResponse(error)
+    if (blocked) return NextResponse.json(blocked, { status: 400 })
     console.error('Create expense error:', error)
     return NextResponse.json({ error: error.message || 'Failed to create expense' }, { status: 500 })
   }

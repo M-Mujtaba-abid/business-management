@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,16 +48,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Enter a valid amount' }, { status: 400 })
     }
 
-    const withdrawal = await prisma.withdrawal.create({
-      data: {
-        personId,
-        amount: amt,
-        reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null,
-      },
-      include: { person: true },
-    })
+    // Cannot take out more than the person holds
+    const withdrawal = await withBalanceGuard((tx) =>
+      tx.withdrawal.create({
+        data: {
+          personId,
+          amount: amt,
+          reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null,
+        },
+        include: { person: true },
+      })
+    )
     return NextResponse.json(withdrawal, { status: 201 })
   } catch (error: any) {
+    const blocked = balanceErrorResponse(error)
+    if (blocked) return NextResponse.json(blocked, { status: 400 })
     return NextResponse.json({ error: error.message || 'Failed to save withdrawal' }, { status: 500 })
   }
 }

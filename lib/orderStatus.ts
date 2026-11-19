@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma'
 import type { OrderStatus, Sale } from '@prisma/client'
 import { deliveredProfit, splitByWeight } from '@/lib/saleMoney'
 import { notifyOrder, kindForStatus } from '@/lib/whatsapp'
+import { Actor, SYSTEM, logOrder, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
 
 // Changing an order's status, shared by the Orders page (PATCH /api/sales/[id]) and the
 // Leopards status push (/api/leopards/push), so both do exactly the same thing.
@@ -29,6 +30,8 @@ export interface StatusChange {
   deductDeliveryOnReturn?: boolean
   returnLoss?: number | string
   coverReturned?: boolean
+  actor?: Actor // who changed it (order history); automatic when not given
+  note?: string // extra words for the history line, e.g. "from Leopards: Delivered"
 }
 
 // Moves a whole parcel to the new status. A parcel's return loss is split across its products by
@@ -94,12 +97,36 @@ export async function changeParcelStatus(sales: Sale[], change: StatusChange): P
             ...(targetStatus !== 'RETURNED' && prevStatus === 'RETURNED'
               ? { returnedAt: null, returnReceived: false, returnReceivedAt: null }
               : {}),
+            // Delivered → time to ask for a review; leaving Delivered → nothing to ask.
+            // A review step already taken (called / reviewed) is kept if it is delivered again.
+            ...(targetStatus === 'DELIVERED' && sale.reviewStatus === 'NONE'
+              ? { reviewStatus: 'PENDING' as const, reviewStatusAt: new Date() }
+              : {}),
+            ...(targetStatus !== 'DELIVERED' && sale.reviewStatus !== 'NONE'
+              ? { reviewStatus: 'NONE' as const, reviewStatusAt: null }
+              : {}),
           },
         })
       )
     }
     return rows
   })
+
+  // Order history (logged before the WhatsApp message it may trigger)
+  const prevStatus = sales[0].status
+  if (prevStatus !== targetStatus) {
+    const loss = updated.reduce((a, s) => a + (s.returnLoss || 0), 0)
+    await logOrder({
+      ...orderRef(sales),
+      action: 'status',
+      message:
+        `Status: ${STATUS_WORDS[prevStatus]} → ${STATUS_WORDS[targetStatus]}` +
+        (targetStatus === 'RETURNED' ? ` · return loss ${rs(loss)}${change.coverReturned ? ' · covers back in stock' : ''}` : '') +
+        (change.note ? ` (${change.note})` : ''),
+      actor: change.actor || SYSTEM,
+      details: { from: prevStatus, to: targetStatus, ...(targetStatus === 'RETURNED' ? { returnLoss: loss, coverReturned: !!change.coverReturned } : {}) },
+    })
+  }
 
   // WhatsApp the customer when the order really moved to Packing / Dispatched / Delivered.
   // Each message is sent once per order, so moving back and forth never sends it twice.

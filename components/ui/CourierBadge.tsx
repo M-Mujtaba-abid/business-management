@@ -23,6 +23,40 @@ interface Props {
   className?: string
 }
 
+const shortWhen = (d: Date) => {
+  const mins = Math.round((Date.now() - d.getTime()) / 60000)
+  if (mins < 60) return `${Math.max(mins, 1)}m ago`
+  if (mins < 24 * 60) return `${Math.round(mins / 60)}h ago`
+  return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+// "Leopards" column on the Orders page: the latest status Leopards gave us, when, and its note
+// (e.g. "Received by Ali" or why a delivery attempt failed)
+export function CourierCell({
+  trackingNumber,
+  status,
+  code,
+  reason,
+  at,
+}: Props & { trackingNumber?: string | null }) {
+  const isLeopards = /^[A-Z]{2}\d{10}$/i.test((trackingNumber || '').replace(/\s+/g, ''))
+  if (!isLeopards) return <span className="text-slate-300">—</span>
+  if (!status && !code) return <span className="text-[11px] text-slate-400">No update yet</span>
+
+  const when = at ? new Date(at) : null
+  return (
+    <div className="flex flex-col items-start gap-0.5 min-w-0">
+      <CourierBadge status={status} code={code} reason={reason} at={at} />
+      {when && !isNaN(when.getTime()) && <span className="text-[10px] text-slate-400 whitespace-nowrap">{shortWhen(when)}</span>}
+      {reason && (
+        <span className="text-[10px] text-slate-500 leading-snug line-clamp-2" title={reason}>
+          {reason}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function CourierBadge({ status, code, reason, at, className = '' }: Props) {
   if (!status && !code) return null
   const st = classifyCourierStatus(code || status)

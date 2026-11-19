@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { cleanPhone } from '@/lib/orderRefs'
 import { trackingLink } from '@/lib/leopards'
 import { DEFAULT_TEMPLATES, renderTemplate, pickVariant, type TemplateKey } from '@/lib/whatsappTemplates'
+import { type Actor, SYSTEM, WHATSAPP, WA_KIND_WORDS, logOrder } from '@/lib/orderLog'
 
 // WhatsApp customer messages, sent through our own whatsmeow service (wa-service/).
 //
@@ -173,13 +174,30 @@ export async function applyCustomerResponse(orderNo: number, response: 'CONFIRME
     where: { orderNo, customerResponse: { in: ['NONE', 'PENDING'] } },
     data: { customerResponse: response, customerRespondedAt: new Date() },
   })
+  const lead = await prisma.sale.findFirst({ where: { orderNo }, select: { customerResponse: true, customerName: true } })
+  const customer: Actor = { source: 'CUSTOMER', name: lead?.customerName || 'Customer' }
   if (count > 0) {
+    await logOrder({
+      orderNo,
+      action: 'customer_response',
+      message: response === 'CONFIRMED' ? 'Customer confirmed the order on WhatsApp' : 'Customer cancelled the order on WhatsApp',
+      actor: customer,
+      details: { response },
+    })
     await notifyOrder(orderNo, 'REPLY_ACK', { force: true, response })
     return 'saved'
   }
-  const lead = await prisma.sale.findFirst({ where: { orderNo }, select: { customerResponse: true } })
   if (!lead || lead.customerResponse === response) return 'same'
   if (lead.customerResponse === 'CONFIRMED' || lead.customerResponse === 'CANCELLED') {
+    await logOrder({
+      orderNo,
+      action: 'customer_response',
+      message: `Customer tried to change their answer to ${response === 'CONFIRMED' ? 'Confirm' : 'Cancel'} (ignored: the first answer, ${
+        lead.customerResponse === 'CONFIRMED' ? 'Confirm' : 'Cancel'
+      }, stays)`,
+      actor: customer,
+      details: { tried: response, kept: lead.customerResponse },
+    })
     await tellAnswerLocked(orderNo, lead.customerResponse)
   }
   return 'locked'
@@ -244,10 +262,34 @@ async function pushToService(
       error = err?.name === 'TimeoutError' ? 'WhatsApp service did not answer in time.' : `WhatsApp service unreachable: ${err?.message || err}`
     }
   }
-  await prisma.whatsAppMessage.update({
+  const row = await prisma.whatsAppMessage.update({
     where: { id: msg.id },
     data: { attempts: { increment: 1 }, scheduledFor, ...(error ? { status: 'FAILED', error } : {}) },
   })
+  // Order history: could not even hand it to the service, or it waits for quiet hours to end
+  if (error) {
+    await logOrder({
+      orderNo: row.orderNo,
+      action: 'whatsapp_failed',
+      message: `WhatsApp ${WA_KIND_WORDS[row.kind] || 'message'} failed: ${error}`,
+      actor: WHATSAPP,
+      details: { kind: row.kind, error },
+    })
+  } else if (scheduledFor) {
+    await logOrder({
+      orderNo: row.orderNo,
+      action: 'whatsapp_scheduled',
+      message: `WhatsApp ${WA_KIND_WORDS[row.kind] || 'message'} waiting, goes out ${scheduledFor.toLocaleString('en-GB', {
+        timeZone: 'Asia/Karachi',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`,
+      actor: WHATSAPP,
+      details: { kind: row.kind, scheduledFor },
+    })
+  }
   return error
 }
 
@@ -261,13 +303,23 @@ interface NotifyOptions {
 // back and forth never spams the customer. Never throws.
 export async function notifyOrder(orderNo: number | null | undefined, kind: Exclude<WhatsAppKind, 'BILL' | 'ANSWER_LOCKED'>, opts: NotifyOptions = {}): Promise<void> {
   if (!orderNo) return
+  // Order history: why a message did not go out
+  const skipped = (reason: string) =>
+    logOrder({
+      orderNo,
+      action: 'whatsapp_skipped',
+      message: `WhatsApp ${WA_KIND_WORDS[kind] || 'message'} not sent: ${reason}`,
+      actor: SYSTEM,
+      details: { kind, reason },
+    })
   try {
     const rows = await loadOrder(orderNo)
     if (!rows.length) return
     const phone = toWaPhone(rows[0].customerPhone)
-    if (!phone) return
+    if (!phone) return skipped('no valid customer phone number')
     // WhatsApp off (everywhere, or for this order's source, e.g. Daraz): nothing at all goes out
-    if (await whatsappBlockedFor(rows[0].orderSourceId)) return
+    const blocked = await whatsappBlockedFor(rows[0].orderSourceId)
+    if (blocked) return skipped(blocked.replace(/\.$/, ''))
 
     const existing = await prisma.whatsAppMessage.findUnique({ where: { orderNo_kind: { orderNo, kind } } })
     if (existing && !opts.force && existing.status !== 'FAILED') return // already sent / on its way
@@ -280,11 +332,11 @@ export async function notifyOrder(orderNo: number | null | undefined, kind: Excl
         create: { orderNo, kind, phone, body: '', status: 'FAILED', error },
         update: { status: 'FAILED', error, scheduledFor: null },
       })
-      return
+      return skipped('the customer replied STOP')
     }
 
     const tpl = await chooseBody(templateKeyFor(kind, opts.response))
-    if (!tpl.enabled) return // this message is switched off on the WhatsApp page
+    if (!tpl.enabled) return skipped('this message is switched off on the WhatsApp page') // switched off on the WhatsApp page
     const values = orderValues(rows)
     // no links to people who never wrote back (or voted): links from unknown numbers look like spam
     if ((values.reviewUrl || values.trackingLink) && !(await hasReplied(phone))) {

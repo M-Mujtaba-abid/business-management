@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { OrderStatus, SupplierPayment, CustomerPayment, CustomerResponse } from '@prisma/client'
+import { attentionWhere } from '@/lib/attention'
 
 // Delivered orders whose review is still to get (shown on the "Reviews" tab)
 export const REVIEW_TODO: Prisma.SaleWhereInput = { status: 'DELIVERED', reviewStatus: { in: ['PENDING', 'CALLED'] } }
@@ -19,6 +20,11 @@ export function salesWhere(searchParams: URLSearchParams, opts: { ignoreStatus?:
     Object.assign(where, REVIEW_TODO)
   } else if (status !== 'ALL') {
     where.status = status as OrderStatus
+  }
+  // "Needs attention" check from the Dashboard (same rule as its count)
+  const attention = attentionWhere(searchParams.get('attention') || '')
+  if (attention) {
+    where.AND = [...(where.AND || []), attention]
   }
   // Filter panel: one review step
   const reviewStatus = searchParams.get('reviewStatus')

@@ -95,6 +95,18 @@ export interface OrderFilters {
   customerResponse: string // '' | 'PENDING' | 'CONFIRMED' | 'CANCELLED' (WhatsApp reply)
   returnState: string // '' | 'PENDING' (returned, parcel not back yet) | 'RECEIVED'
   reviewStatus: string // '' | 'PENDING' | 'CALLED' | 'REVIEWED' | 'DECLINED'
+  attention: string // '' | a "Needs attention" check key (from the Dashboard)
+}
+
+// Names of the Dashboard "Needs attention" checks (rules in lib/attention.ts)
+export const ATTENTION_LABELS: Record<string, string> = {
+  unconfirmed: 'Not confirmed on WhatsApp (24h+)',
+  packing_old: 'Still packing (2+ days)',
+  stuck_dispatched: 'Parcels with no movement (4+ days)',
+  leopards_invoiced: 'Leopards invoiced, not paid yet',
+  delivered_unpaid: 'Delivered, money not received (15+ days)',
+  return_not_back: 'Returns not back yet (7+ days)',
+  reviews: 'Customers to call for a review',
 }
 
 export const EMPTY_ORDER_FILTERS: OrderFilters = {
@@ -110,6 +122,7 @@ export const EMPTY_ORDER_FILTERS: OrderFilters = {
   customerResponse: '',
   returnState: '',
   reviewStatus: '',
+  attention: '',
 }
 
 interface Option {
@@ -512,6 +525,17 @@ export default function OrderList({
             <CheckLeopardsButton onChanged={onChanged} />
           </div>
         </div>
+
+        {/* Opened from the Dashboard "Needs attention" box */}
+        {filters.attention && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span className="font-bold">Needs attention:</span>
+            <span>{ATTENTION_LABELS[filters.attention] || filters.attention}</span>
+            <button onClick={() => setFilters({ ...filters, attention: '' })} className="ml-auto flex items-center gap-1 font-semibold hover:text-rose-700">
+              <X className="h-3.5 w-3.5" /> Show all orders
+            </button>
+          </div>
+        )}
 
         {/* More filters (hidden until "Filters" is opened) */}
         {showFilters && (

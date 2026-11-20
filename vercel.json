@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/leopards-sync", "schedule": "0 13 * * *" }
+    { "path": "/api/cron/daily?slot=morning", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/daily?slot=night", "schedule": "0 17 * * *" }
   ]
 }

@@ -58,8 +58,10 @@ export async function GET(request: NextRequest) {
       console.error('WhatsApp statuses unavailable:', err)
     }
 
-    return NextResponse.json(sales.map((s) => ({
+    return NextResponse.json(sales.map(({ courierSlipUrl, ...s }) => ({
       ...s,
+      // the Leopards slip link stays on the server (/api/sales/[id]/leopards/slip)
+      hasLeopardsSlip: Boolean(courierSlipUrl),
       imageCount: (s.orderNo != null && countByOrder.get(s.orderNo)) || 0,
       imageUrl: (s.orderNo != null && thumbByOrder.get(s.orderNo)) || null,
       whatsapp: (s.orderNo != null && waByOrder.get(s.orderNo)) || [],

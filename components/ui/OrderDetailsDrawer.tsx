@@ -15,6 +15,7 @@ import PhotoPicker from './PhotoPicker'
 import ReturnReceivedToggle from './ReturnReceivedToggle'
 import ReviewFollowUp from './ReviewFollowUp'
 import { OrderHistoryButton } from '../OrderHistory'
+import { LeopardsBookingSection } from '../LeopardsBooking'
 import { BillButton } from '../BillDialog'
 import { OrderPhoto, discardOrderPhoto } from '@/lib/photoUpload'
 
@@ -359,6 +360,25 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                 </div>
               )}
             </section>
+
+            {/* Leopards: book from the app, print slip, cancel booking */}
+            <LeopardsBookingSection
+              order={{
+                id: lead.id,
+                orderNo: lead.orderNo,
+                customerName: lead.customerName,
+                customerPhone: lead.customerPhone,
+                address: lead.address,
+                city: lead.city,
+                total: group.saleTotal,
+                items: group.items.reduce((a, s) => a + s.quantity, 0),
+              }}
+              trackingNumber={lead.trackingNumber}
+              bookedAt={lead.courierBookedAt}
+              hasSlip={lead.hasLeopardsSlip}
+              status={lead.status}
+              onChanged={onSaved}
+            />
 
             {/* Review follow-up (delivered orders) */}
             {lead.status === 'DELIVERED' && lead.reviewStatus && lead.reviewStatus !== 'NONE' && (

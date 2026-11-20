@@ -338,6 +338,10 @@ model Sale {
   courierPayment         String?
   courierMoney           Json?
   courierMoneyAt         DateTime?
+  // Booked with Leopards from the app (Book Leopards button): label link (kept on the server; it can
+  // carry account details, so the browser gets it through /api/sales/[id]/leopards/slip) and when
+  courierSlipUrl         String?
+  courierBookedAt        DateTime?
   // Review follow-up (shared by a parcel's products). Becomes PENDING when the order is delivered.
   reviewStatus           ReviewStatus @default(NONE)
   reviewStatusAt         DateTime?

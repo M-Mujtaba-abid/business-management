@@ -23,6 +23,29 @@ const BUSINESS_NAME = process.env.BUSINESS_NAME || ''
 
 export const whatsappEnabled = () => Boolean(SERVICE_URL && API_SECRET)
 
+// A plain text to the owners (daily report), not tied to an order. Sent straight away (skips quiet
+// hours). Returns the error text, or null when wa-service accepted it.
+export async function sendOwnerMessage(phone: string, text: string): Promise<string | null> {
+  if (!whatsappEnabled()) return 'WhatsApp service is not set up (WA_SERVICE_URL / WA_API_SECRET).'
+  const to = toWaPhone(phone)
+  if (!to) return `Not a valid phone number: ${phone}`
+  try {
+    const res = await fetch(`${SERVICE_URL}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${API_SECRET}` },
+      // refId is not a WhatsAppMessage row: the sent / failed webhook simply ignores it
+      body: JSON.stringify({ refId: `owner_${Date.now()}_${to}`, phone: to, text, priority: 'now' }),
+      signal: AbortSignal.timeout(10000),
+      cache: 'no-store',
+    })
+    if (res.ok) return null
+    const data = await res.json().catch(() => ({}))
+    return data?.error || `WhatsApp service error (${res.status})`
+  } catch (err: any) {
+    return err?.name === 'TimeoutError' ? 'WhatsApp service did not answer in time.' : `WhatsApp service unreachable: ${err?.message || err}`
+  }
+}
+
 // Customer phone in WhatsApp's international form (digits only), e.g. "0300-1234567" → "923001234567".
 // Numbers without a country code are taken as Pakistani.
 export function toWaPhone(v: unknown): string | null {

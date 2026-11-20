@@ -19,6 +19,7 @@ export interface SyncSummary {
   failed: string[] // tracking numbers Leopards could not answer for
   moneyChecked: number // delivered parcels whose Leopards money was refreshed
   paid: number[] // order numbers marked Received because Leopards paid them
+  alerted?: number // orders in the owners' WhatsApp payment alert
   moneyError?: string
 }
 
@@ -80,6 +81,7 @@ export async function syncLeopardsOrders(): Promise<SyncSummary> {
     const money = await syncLeopardsMoney()
     summary.moneyChecked = money.checked
     summary.paid = money.paid
+    summary.alerted = money.alerted || 0
   } catch (err: any) {
     console.error('Leopards money sync failed:', err)
     summary.moneyError = err?.message || 'failed'

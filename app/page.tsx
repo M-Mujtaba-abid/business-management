@@ -26,6 +26,8 @@ import WhatsAppPage from '@/components/WhatsAppPage'
 import WhatsAppSwitches from '@/components/WhatsAppSwitches'
 import UsersSettings from '@/components/UsersSettings'
 import LogsPage from '@/components/LogsPage'
+import NeedsAttention from '@/components/NeedsAttention'
+import DailyReportSettings from '@/components/DailyReportSettings'
 // import LedgerTab from '@/components/LedgerTab' // PARTNERS LEDGER — uncomment to restore
 import { Toaster, toast } from 'sonner'
 
@@ -144,6 +146,7 @@ export default function Home() {
       if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
       if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
       if (orderFilters.reviewStatus) url += `&reviewStatus=${orderFilters.reviewStatus}`
+      if (orderFilters.attention) url += `&attention=${orderFilters.attention}`
       // The numbers on the status tabs come with the same filters (all but the status itself)
       const [res, countsRes] = await Promise.all([
         fetch(url),
@@ -394,6 +397,22 @@ export default function Home() {
 
       {/* Render Active View */}
       {sectionReady && activeSection === 'dashboard' && (
+        <div className="mb-6">
+          <NeedsAttention
+            refreshKey={refreshKey}
+            onOpen={(open) => {
+              if (open.section === 'orders' && open.attention) {
+                setOrderFilters({ ...EMPTY_ORDER_FILTERS, attention: open.attention })
+                setStatusFilter('ALL')
+                setActiveSection('orders')
+              } else {
+                setActiveSection(open.section as NavSection)
+              }
+            }}
+          />
+        </div>
+      )}
+      {sectionReady && activeSection === 'dashboard' && (
         <DashboardStats
           stats={stats}
           recentSales={sales}
@@ -484,6 +503,7 @@ export default function Home() {
       {sectionReady && activeSection === 'settings' && (
         <div key={refreshKey} className="space-y-6">
           <UsersSettings />
+          <DailyReportSettings />
           <WhatsAppSwitches />
           <CityRatesTab />
         </div>

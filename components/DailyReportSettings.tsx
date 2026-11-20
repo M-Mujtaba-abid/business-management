@@ -138,8 +138,8 @@ export default function DailyReportSettings() {
           {/* Morning / night */}
           {(
             [
-              ['morning', '☀️ Morning to-do (9:00 am)', 'What needs attention today + yesterday in short', morning, setMorning],
-              ['night', '🌙 Night summary (10:00 pm)', "Today's orders, deliveries, profit, money with each person, bank check", night, setNight],
+              ['morning', '☀️ Morning (9:00 am)', "Yesterday's orders, deliveries, profit, In hand + every order still Packing / Dispatched", morning, setMorning],
+              ['night', '🌙 Night (10:00 pm)', "Today's new orders, deliveries, profit and In hand", night, setNight],
             ] as const
           ).map(([slot, title, sub, on, setOn]) => (
             <div key={slot} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">

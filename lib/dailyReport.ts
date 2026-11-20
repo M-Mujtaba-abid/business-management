@@ -97,71 +97,59 @@ async function dayFacts(from: Date, to: Date) {
   }
 }
 
-async function bankLines() {
-  const [people, last] = await Promise.all([
-    prisma.person.findMany({ select: { id: true, name: true } }),
-    prisma.bankCheck.findMany({ orderBy: { createdAt: 'desc' }, distinct: ['personId'] }),
-  ])
-  const of = new Map(last.map((c) => [c.personId, c]))
-  return people.map((p) => {
-    const c = of.get(p.id)
-    if (!c) return `${p.name}: not checked yet`
-    const when = pkLabel(c.createdAt)
-    return Math.abs(c.difference) < 1
-      ? `${p.name}: ✅ matched (${when})`
-      : `${p.name}: ⚠️ bank has ${rs(Math.abs(c.difference))} ${c.difference > 0 ? 'MORE' : 'LESS'} than the app (${when})`
+// ── The messages ──
+// Short on purpose (owner's choice): new orders, delivered, profit, In hand.
+// The morning one also lists every order still Packing / Dispatched by order number.
+const dayLines = (f: Awaited<ReturnType<typeof dayFacts>>) => [
+  `📦 New orders: *${f.newOrders}* · ${rs(f.newValue)}`,
+  `🚚 Delivered: *${f.delivered}*${f.delivered ? ` · ${rs(f.deliveredSales)}` : ''}`,
+  `📈 Profit: *${rs(f.deliveredProfit)}*`,
+  '',
+  '👛 *In hand*',
+  ...f.money.map((m) => `${m.name}: *${rs(m.inHand)}*`),
+]
+
+// Order numbers of all orders in a status, oldest first: "#1200, #1206"
+async function orderNumbers(status: 'PACKING' | 'DISPATCHED') {
+  const rows = await prisma.sale.findMany({
+    where: { status },
+    orderBy: { createdAt: 'asc' },
+    select: { orderNo: true, id: true, parcelId: true },
   })
+  const nos = Array.from(new Set(rows.map((r) => r.orderNo).filter((n): n is number => n != null)))
+  const without = new Set(rows.filter((r) => r.orderNo == null).map((r) => r.parcelId || r.id)).size
+  return { count: nos.length + without, list: nos.map((n) => `#${n}`).join(', ') + (without ? `${nos.length ? ', ' : ''}+${without} without number` : '') }
 }
 
-// ── The messages ──
 export async function buildReport(slot: ReportSlot): Promise<string> {
-  const attention = await computeAttention()
-  const todo = attention.map((a) => `${a.severity === 'high' ? '🔴' : a.severity === 'medium' ? '🟠' : '🔵'} ${a.title}: *${a.count}*${a.amount ? ` (${rs(a.amount)})` : ''}`)
-
   if (slot === 'night') {
     const from = pkDayStart(0)
     const f = await dayFacts(from, new Date(from.getTime() + DAY))
-    const lines = [
-      `🌙 *${BUSINESS} · Daily report*`,
-      `_${pkLabel(from)}_`,
-      '',
-      `📦 New orders: *${f.newOrders}* (${rs(f.newValue)})`,
-      `🚚 Delivered: *${f.delivered}*${f.delivered ? ` (${rs(f.deliveredSales)})` : ''} · Returned: *${f.returned}* · Cancelled: *${f.cancelled}*`,
-      `📈 Profit on today's deliveries: *${rs(f.deliveredProfit)}*`,
-      '',
-      '💵 *Money today*',
-      ...f.money.map((m) => `• ${m.name}: +${rs(m.received)} received (${m.receivedCount})${m.out ? ` · −${rs(-m.out)} out` : ''}`),
-      '',
-      '👛 *In hand now*',
-      ...f.money.map((m) => `• ${m.name}: *${rs(m.inHand)}*`),
-      '',
-      '🏦 *Bank check*',
-      ...(await bankLines()).map((l) => `• ${l}`),
-      '',
-      todo.length ? '⚠️ *Needs attention*' : '✅ Nothing stuck right now',
-      ...todo,
-    ]
-    return lines.join('\n')
+    return [`🌙 *${BUSINESS}* · ${pkLabel(from)}`, '', ...dayLines(f)].join('\n')
   }
 
-  // morning
+  // morning: yesterday in short + what is still packing / on the way + one attention line
   const today = pkDayStart(0)
-  const y = await dayFacts(pkDayStart(-1), today)
-  const lines = [
-    `☀️ *Good morning · ${BUSINESS}*`,
-    `_To-do for ${pkLabel(today)}_`,
+  const yesterday = pkDayStart(-1)
+  const [y, packing, dispatched, attention] = await Promise.all([
+    dayFacts(yesterday, today),
+    orderNumbers('PACKING'),
+    orderNumbers('DISPATCHED'),
+    computeAttention(),
+  ])
+  const urgent = attention.filter((a) => a.severity !== 'info').length
+  return [
+    `☀️ *${BUSINESS}* · Yesterday (${pkLabel(yesterday)})`,
     '',
-    todo.length ? '📝 *Needs attention today*' : '✅ Nothing stuck — all clear',
-    ...todo,
+    ...dayLines(y),
     '',
-    `📊 *Yesterday*: ${y.newOrders} new orders (${rs(y.newValue)}) · ${y.delivered} delivered · ${y.returned} returned · profit ${rs(y.deliveredProfit)}`,
+    `📦 *Packing (${packing.count})*`,
+    packing.count ? packing.list : 'none',
     '',
-    '👛 *In hand now*',
-    ...y.money.map((m) => `• ${m.name}: *${rs(m.inHand)}*`),
-    '',
-    'Open the app → Dashboard → Needs attention for the orders.',
-  ]
-  return lines.join('\n')
+    `🚚 *Dispatched (${dispatched.count})*`,
+    dispatched.count ? dispatched.list : 'none',
+    ...(urgent ? ['', `⚠️ ${urgent} thing${urgent > 1 ? 's' : ''} need attention → open the app`] : []),
+  ].join('\n')
 }
 
 // Sends the report to every recipient. force=true ignores the on/off switch (test button).

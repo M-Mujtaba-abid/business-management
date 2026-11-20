@@ -29,6 +29,8 @@ export default function NeedsAttention({ onOpen, refreshKey }: { onOpen: (open: 
   const [error, setError] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // The whole box starts closed every time; click the header to open it
+  const [expandedBox, setExpandedBox] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -45,25 +47,55 @@ export default function NeedsAttention({ onOpen, refreshKey }: { onOpen: (open: 
   useEffect(load, [load, refreshKey])
 
   const urgent = items?.filter((i) => i.severity === 'high').length || 0
+  const soon = items?.filter((i) => i.severity === 'medium').length || 0
+  const todo = items?.filter((i) => i.severity === 'info').length || 0
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+      {/* Header = the dropdown: click to open / close */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expandedBox}
+        onClick={() => setExpandedBox((v) => !v)}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setExpandedBox((v) => !v))}
+        className={`flex cursor-pointer select-none items-center gap-2 px-4 py-3 hover:bg-slate-50 ${expandedBox ? 'border-b border-slate-100' : ''} rounded-2xl`}
+      >
         {items && items.length === 0 ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-bold text-slate-900">Needs attention</h2>
           <p className="text-[11px] text-slate-500">
-            {items == null ? 'Checking…' : items.length === 0 ? 'All clear — nothing is stuck right now' : `${items.length} thing${items.length > 1 ? 's' : ''} to look at${urgent ? ` · ${urgent} urgent` : ''}`}
+            {items == null
+              ? 'Checking…'
+              : items.length === 0
+              ? 'All clear — nothing is stuck right now'
+              : `${items.length} thing${items.length > 1 ? 's' : ''} to look at · ${expandedBox ? 'click to close' : 'click to open'}`}
           </p>
         </div>
-        <button onClick={load} className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Check again">
+        {/* small counts so the closed box still tells the story */}
+        {items && items.length > 0 && (
+          <div className="ml-auto hidden sm:flex items-center gap-1.5">
+            {urgent > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-700">{urgent} urgent</span>}
+            {soon > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">{soon} soon</span>}
+            {todo > 0 && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-bold text-sky-700">{todo} to do</span>}
+          </div>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            load()
+          }}
+          className={`${items && items.length > 0 ? 'sm:ml-0 ml-auto' : 'ml-auto'} rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700`}
+          title="Check again"
+        >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         </button>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition ${expandedBox ? 'rotate-180' : ''}`} />
       </div>
 
-      {error && <p className="m-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{error}</p>}
+      {expandedBox && error && <p className="m-3 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{error}</p>}
 
-      {items && items.length > 0 && (
+      {expandedBox && items && items.length > 0 && (
         <ul className="space-y-2 p-3">
           {items.map((it) => {
             const t = TONE[it.severity]
@@ -110,7 +142,7 @@ export default function NeedsAttention({ onOpen, refreshKey }: { onOpen: (open: 
           })}
         </ul>
       )}
-      {items && items.length > 0 && (
+      {expandedBox && items && items.length > 0 && (
         <p className="flex items-center gap-1 px-4 pb-3 text-[10px] text-slate-400">
           <Info className="h-3 w-3" /> Red = urgent, orange = soon, blue = to do. The same list goes in the morning WhatsApp report.
         </p>

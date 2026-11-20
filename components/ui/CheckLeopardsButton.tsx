@@ -23,6 +23,7 @@ export default function CheckLeopardsButton({ onChanged }: { onChanged?: () => v
       if (s.updated) parts.push(`${s.updated} tracking update${s.updated > 1 ? 's' : ''}`)
       if (s.paid?.length) parts.push(`Paid by Leopards → Received: #${s.paid.join(', #')}`)
       if (s.moneyChecked) parts.push(`money checked for ${s.moneyChecked} delivered parcel${s.moneyChecked > 1 ? 's' : ''}`)
+      if (s.alerted) parts.push(`💰 payment alert sent on WhatsApp (${s.alerted} order${s.alerted > 1 ? 's' : ''})`)
 
       if (s.checked === 0 && !s.moneyChecked) toast.info('No Leopards orders to check')
       else if (parts.length) toast.success(`Checked ${s.checked} parcel${s.checked > 1 ? 's' : ''}. ${parts.join(' · ')}`)

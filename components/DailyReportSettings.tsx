@@ -28,9 +28,10 @@ export default function DailyReportSettings() {
   const [recipients, setRecipients] = useState<Recipient[]>([])
   const [morning, setMorning] = useState(true)
   const [night, setNight] = useState(true)
+  const [leopardsPayment, setLeopardsPayment] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [sending, setSending] = useState<'' | 'morning' | 'night'>('')
+  const [sending, setSending] = useState<'' | 'morning' | 'night' | 'leopards'>('')
   const [preview, setPreview] = useState<{ slot: string; text: string } | null>(null)
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function DailyReportSettings() {
       .then(([s, people]) => {
         setMorning(s.morning !== false)
         setNight(s.night !== false)
+        setLeopardsPayment(s.leopardsPayment !== false)
         // start with one empty row per person (Mujtaba, Noman) when nothing is saved yet
         setRecipients(s.recipients?.length ? s.recipients : Array.isArray(people) ? people.map((p: any) => ({ name: p.name, phone: '' })) : [])
       })
@@ -61,7 +63,7 @@ export default function DailyReportSettings() {
     }
   }
 
-  const showPreview = async (slot: 'morning' | 'night') => {
+  const showPreview = async (slot: 'morning' | 'night' | 'leopards') => {
     try {
       const d = await fetch(`/api/reports?preview=${slot}`).then((r) => r.json())
       if (d.error) throw new Error(d.error)
@@ -71,14 +73,16 @@ export default function DailyReportSettings() {
     }
   }
 
-  const sendNow = async (slot: 'morning' | 'night') => {
+  const sendNow = async (slot: 'morning' | 'night' | 'leopards') => {
     if (!(await save({ recipients }, 'Numbers saved'))) return
     setSending(slot)
     try {
       const res = await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot }) })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Not sent')
-      toast.success(`${slot === 'morning' ? 'Morning' : 'Night'} report sent to ${d.sent} number${d.sent > 1 ? 's' : ''}`)
+      toast.success(
+        `${slot === 'morning' ? 'Morning report' : slot === 'night' ? 'Night report' : 'Leopards payment alert example'} sent to ${d.sent} number${d.sent > 1 ? 's' : ''}`
+      )
       if (d.errors?.length) toast.warning(d.errors.join(' · '))
     } catch (e: any) {
       toast.error(e.message)
@@ -97,7 +101,7 @@ export default function DailyReportSettings() {
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-slate-900">Daily WhatsApp report</h2>
-          <p className="text-xs text-slate-500">Sent from your business WhatsApp to the owners · morning to-do at 9 am, night summary at 10 pm</p>
+          <p className="text-xs text-slate-500">Sent from your business WhatsApp to the owners · 9 am, 10 pm, and instant Leopards payment alerts</p>
         </div>
       </div>
 
@@ -140,6 +144,13 @@ export default function DailyReportSettings() {
             [
               ['morning', '☀️ Morning (9:00 am)', "Yesterday's orders, deliveries, profit, In hand + every order still Packing / Dispatched", morning, setMorning],
               ['night', '🌙 Night (10:00 pm)', "Today's new orders, deliveries, profit and In hand", night, setNight],
+              [
+                'leopards',
+                '💰 Leopards payment alert (instant)',
+                'When Leopards makes an invoice or pays: invoice no., each order no. with amount, total and whose account',
+                leopardsPayment,
+                setLeopardsPayment,
+              ],
             ] as const
           ).map(([slot, title, sub, on, setOn]) => (
             <div key={slot} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
@@ -148,7 +159,8 @@ export default function DailyReportSettings() {
                 disabled={saving}
                 onChange={async (v) => {
                   setOn(v)
-                  if (!(await save({ [slot]: v }, `${title.split(' (')[0]} ${v ? 'on' : 'off'}`))) setOn(!v)
+                  const field = slot === 'leopards' ? 'leopardsPayment' : slot
+                  if (!(await save({ [field]: v }, `${title.split(' (')[0]} ${v ? 'on' : 'off'}`))) setOn(!v)
                 }}
               />
               <div className="min-w-0 flex-1">

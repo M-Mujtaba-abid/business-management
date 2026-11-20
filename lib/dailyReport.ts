@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { buildLedger, sumLedger } from '@/lib/personLedger'
 import { computeAttention } from '@/lib/attention'
 import { sendOwnerMessage } from '@/lib/whatsapp'
+import { appLink } from '@/lib/leopards'
 
 export type ReportSlot = 'morning' | 'night'
 export interface Recipient {
@@ -125,7 +126,7 @@ export async function buildReport(slot: ReportSlot): Promise<string> {
   if (slot === 'night') {
     const from = pkDayStart(0)
     const f = await dayFacts(from, new Date(from.getTime() + DAY))
-    return [`🌙 *${BUSINESS}* · ${pkLabel(from)}`, '', ...dayLines(f)].join('\n')
+    return withLink([`🌙 *${BUSINESS}* · ${pkLabel(from)}`, '', ...dayLines(f)].join('\n'), 'dashboard')
   }
 
   // morning: yesterday in short + what is still packing / on the way + one attention line
@@ -138,7 +139,7 @@ export async function buildReport(slot: ReportSlot): Promise<string> {
     computeAttention(),
   ])
   const urgent = attention.filter((a) => a.severity !== 'info').length
-  return [
+  return withLink([
     `☀️ *${BUSINESS}* · Yesterday (${pkLabel(yesterday)})`,
     '',
     ...dayLines(y),
@@ -149,7 +150,13 @@ export async function buildReport(slot: ReportSlot): Promise<string> {
     `🚚 *Dispatched (${dispatched.count})*`,
     dispatched.count ? dispatched.list : 'none',
     ...(urgent ? ['', `⚠️ ${urgent} thing${urgent > 1 ? 's' : ''} need attention → open the app`] : []),
-  ].join('\n')
+  ].join('\n'), 'dashboard')
+}
+
+// Every owner message ends with a link to the app (the page that fits the message)
+export const withLink = (text: string, tab?: string) => {
+  const url = appLink(tab)
+  return url ? `${text}\n\n🔗 ${url}` : text
 }
 
 // Sends the report to every recipient. force=true ignores the on/off switch (test button).

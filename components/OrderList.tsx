@@ -80,6 +80,8 @@ export interface Sale {
   courierPayment?: string | null
   courierMoney?: CourierMoney | null
   courierMoneyAt?: string | null
+  courierBookedAt?: string | null // booked with Leopards from the app
+  hasLeopardsSlip?: boolean // its label can be printed (/api/sales/[id]/leopards/slip)
 }
 
 export interface OrderFilters {

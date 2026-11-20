@@ -13,6 +13,9 @@ const BASE_URL = (
   (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '')
 ).replace(/\/+$/, '')
 
+// Link to a page of our app (owner messages), e.g. appLink('dashboard') → https://…/?tab=dashboard
+export const appLink = (tab?: string) => (BASE_URL ? `${BASE_URL}/${tab ? `?tab=${tab}` : ''}` : '')
+
 export const leopardsEnabled = () => Boolean(API_KEY && API_PASSWORD)
 
 // A Leopards consignment number: 2 letters (origin city) + 10 digits, e.g. LE7549254868

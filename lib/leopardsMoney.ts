@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma'
 import { leopardsEnabled, normalizeCN, isLeopardsCN } from '@/lib/leopards'
 import { deliveredProfit, saleTotal, splitByWeight } from '@/lib/saleMoney'
 import { LEOPARDS, logOrder, orderRef, rs } from '@/lib/orderLog'
+import { PaymentChange, sendPaymentAlert } from '@/lib/ownerAlerts'
 
 const BASE = 'https://merchantapi.leopardscourier.com/api'
 const API_KEY = process.env.LEOPARDS_API_KEY || ''
@@ -114,6 +115,7 @@ export async function fetchLeopardsMoney(cnList: string[]): Promise<Map<string, 
 export interface MoneySyncSummary {
   checked: number // parcels asked
   paid: number[] // order numbers marked Received because Leopards paid them
+  alerted?: number // orders in the owners' payment alert (invoiced / paid since last check)
 }
 
 // Delivered Leopards orders not yet received: save the money breakdown, and mark Received
@@ -141,11 +143,27 @@ export async function syncLeopardsMoney(): Promise<MoneySyncSummary> {
 
   const money = await fetchLeopardsMoney(Array.from(byCn.keys()))
   summary.checked = money.size
+  const personName = new Map((await prisma.person.findMany({ select: { id: true, name: true } })).map((p) => [p.id, p.name]))
+  const alerts: PaymentChange[] = [] // invoiced / paid since the last check → owners' WhatsApp alert
 
   for (const [cn, m] of Array.from(money.entries())) {
     const rows = byCn.get(cn) || []
     if (!rows.length) continue
     const now = new Date()
+    if (rows[0].courierPayment !== m.payment && (m.payment === 'PENDING' || m.payment === 'PAID')) {
+      alerts.push({
+        orderNo: rows[0].orderNo,
+        customer: rows[0].customerName,
+        payout: m.payout,
+        cod: m.cod,
+        charges: m.grossCharges,
+        payment: m.payment,
+        invoiceNo: m.invoiceNo,
+        invoiceDate: m.invoiceDate,
+        method: m.paymentMethod,
+        receivedBy: rows[0].receivedById ? personName.get(rows[0].receivedById) || null : null,
+      })
+    }
     const base = {
       courierCod: m.cod,
       courierCharges: m.grossCharges,
@@ -198,6 +216,10 @@ export async function syncLeopardsMoney(): Promise<MoneySyncSummary> {
     )
     if (rows[0].orderNo != null) summary.paid.push(rows[0].orderNo)
   }
-  console.log(`Leopards money: ${summary.checked} parcel(s) checked, ${summary.paid.length} paid → Received`)
+  // One WhatsApp to the owners for everything invoiced / paid in this check
+  summary.alerted = alerts.length
+  await sendPaymentAlert(alerts)
+
+  console.log(`Leopards money: ${summary.checked} parcel(s) checked, ${summary.paid.length} paid → Received, ${alerts.length} alerted`)
   return summary
 }

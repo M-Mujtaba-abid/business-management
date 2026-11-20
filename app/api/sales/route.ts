@@ -7,6 +7,7 @@ import { parseImages } from '@/lib/orderImages'
 import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequiredRef, cleanPhone } from '@/lib/orderRefs'
 import { notifyOrder, kindForStatus, whatsappByOrder } from '@/lib/whatsapp'
 import { logOrder, requestActor, nameMaps, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
+import { holdStock, inventoryErrorResponse } from '@/lib/inventory'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,6 +79,7 @@ interface ItemInput {
   categoryId?: string | null
   supplierId?: string | null
   returnedItemId?: string | null
+  inventoryItemId?: string | null // sold from our own stock
   supplierPaymentStatus?: 'PAID' | 'PENDING'
 }
 
@@ -151,6 +153,7 @@ export async function POST(request: NextRequest) {
       categoryId: string | null
       supplierId: string | null
       returnedItemId: string | null
+      inventoryItemId: string | null
       supplierPaid: boolean
     }[] = []
     for (const [i, it] of rawItems.entries()) {
@@ -170,8 +173,18 @@ export async function POST(request: NextRequest) {
         categoryId: it.categoryId || null,
         supplierId: it.supplierId || null,
         returnedItemId: it.returnedItemId || null,
+        inventoryItemId: it.returnedItemId ? null : it.inventoryItemId || null,
         supplierPaid: it.supplierPaymentStatus === 'PAID',
       })
+    }
+
+    // From inventory: the buy price is the item's average cost (set here, not by the form)
+    for (const it of items) {
+      if (!it.inventoryItemId) continue
+      const inv = await prisma.inventoryItem.findUnique({ where: { id: it.inventoryItemId }, select: { avgCost: true, active: true, stockQty: true, name: true } })
+      if (!inv || !inv.active) return NextResponse.json({ error: 'An inventory item you picked is not available any more.' }, { status: 400 })
+      it.costPrice = inv.avgCost
+      it.supplierId = null
     }
 
     const returnedIds = items.map((i) => i.returnedItemId).filter(Boolean) as string[]
@@ -202,6 +215,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const actor = await requestActor(request)
     const created = await prisma.$transaction(async (tx) => {
       // One number for the whole order / parcel
       const orderNo = await nextOrderNo(tx)
@@ -216,7 +230,8 @@ export async function POST(request: NextRequest) {
 
       const rows = []
       for (const [i, it] of items.entries()) {
-        const supplierStatus = it.returnedItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
+        // Returned stock and our own inventory were paid for already: no supplier to pay
+        const supplierStatus = it.returnedItemId || it.inventoryItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
         const saleTotal = it.soldPrice * it.quantity
         const payout = payoutShares ? payoutShares[i] : null
 
@@ -252,6 +267,7 @@ export async function POST(request: NextRequest) {
             categoryId: it.categoryId,
             supplierId: it.returnedItemId ? null : it.supplierId,
             returnedItemId: it.returnedItemId,
+            inventoryItemId: it.inventoryItemId,
             supplierPaymentStatus: supplierStatus,
             supplierPaidAt: supplierStatus === 'PAID' ? new Date() : null,
             paymentSourceId: paymentSourceId || null,
@@ -287,6 +303,12 @@ export async function POST(request: NextRequest) {
         rows.push(row)
       }
 
+      // Our own stock: taken now (refuses the whole order if there is not enough)
+      if (rows.some((r) => r.inventoryItemId)) {
+        await holdStock(tx, rows, actor, { noteOrder: false })
+        for (let i = 0; i < rows.length; i++) rows[i] = await tx.sale.findUniqueOrThrow({ where: { id: rows[i].id } })
+      }
+
       if (parsedImages.images.length) {
         await tx.orderImage.createMany({
           data: parsedImages.images.map((img) => ({
@@ -306,15 +328,23 @@ export async function POST(request: NextRequest) {
       const names = await nameMaps()
       const total = created.reduce((a, s) => a + s.soldPrice * s.quantity, 0)
       const lead = created[0]
+      const fromStock = created.filter((s) => s.inventoryItemId)
       await logOrder({
         ...orderRef(created),
         action: 'created',
         message:
           `Order created: ${lead.customerName} · ${rs(total)} · ${STATUS_WORDS[startStatus]}` +
-          (created.length > 1 ? ` · ${created.length} items` : ''),
-        actor: await requestActor(request),
+          (created.length > 1 ? ` · ${created.length} items` : '') +
+          (fromStock.length ? ` · from inventory: ${fromStock.map((s) => `${s.quantity} × ${s.productName}`).join(', ')}` : ''),
+        actor,
         details: {
-          items: created.map((s) => ({ product: s.productName, qty: s.quantity, price: s.soldPrice, cost: s.costPrice })),
+          items: created.map((s) => ({
+            product: s.productName,
+            qty: s.quantity,
+            price: s.soldPrice,
+            cost: s.costPrice,
+            ...(s.inventoryItemId ? { fromInventory: true } : {}),
+          })),
           total,
           status: startStatus,
           customer: lead.customerName,
@@ -340,6 +370,8 @@ export async function POST(request: NextRequest) {
     // Single product keeps the old response shape
     return NextResponse.json(created.length === 1 ? created[0] : { parcelId, sales: created }, { status: 201 })
   } catch (error: any) {
+    const stock = inventoryErrorResponse(error)
+    if (stock) return NextResponse.json(stock, { status: 400 })
     console.error('Create sale error:', error)
     return NextResponse.json({ error: error.message || 'Failed to create sale' }, { status: 500 })
   }

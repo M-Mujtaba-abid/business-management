@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
 import { logOrder, requestActor, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
+import { inventoryErrorResponse, releaseStock } from '@/lib/inventory'
 import { OrderStatus } from '@prisma/client'
 import { destroyPhoto } from '@/lib/cloudinary'
 import { loadParcel, changeParcelStatus } from '@/lib/orderStatus'
@@ -35,6 +36,8 @@ export async function PATCH(
     })
     return NextResponse.json(updated.find((s) => s.id === params.id) ?? updated[0])
   } catch (error: any) {
+    const stock = inventoryErrorResponse(error)
+    if (stock) return NextResponse.json(stock, { status: 400 })
     console.error('Update sale status error:', error)
     return NextResponse.json({ error: error.message || 'Failed to update sale' }, { status: 500 })
   }
@@ -52,7 +55,10 @@ export async function DELETE(
     }
 
     // Deleting a received order takes its money off the person; that cannot leave them below zero
+    const actor = await requestActor(request)
     await withBalanceGuard(async (tx) => {
+      // Stock taken from our inventory goes back
+      await releaseStock(tx, sales, 'released', 'order deleted', actor)
       for (const sale of sales) {
         // Restore stock for delivered old-inventory orders
         if (sale.status === 'DELIVERED' && sale.productId) {
@@ -77,7 +83,7 @@ export async function DELETE(
       ...orderRef(sales),
       action: 'deleted',
       message: `Order deleted: ${sales[0].customerName} · ${rs(total)} · was ${STATUS_WORDS[sales[0].status]}`,
-      actor: await requestActor(request),
+      actor,
       details: {
         items: sales.map((s) => ({ product: s.productName, qty: s.quantity, price: s.soldPrice })),
         total,

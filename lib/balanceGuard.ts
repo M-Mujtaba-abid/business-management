@@ -1,14 +1,15 @@
 // Stops any change that would push a person's "In hand" money below zero.
 //
-// In hand (all time) = order money received (payout - cover cost) - expenses paid - withdrawals - DC paid.
-// Same maths as /api/people/summary.
+// In hand (all time) = the sum of the person's money statement (lib/personLedger.ts):
+// order money received (payout − cover cost; inventory sales: full payout) − expenses paid
+// − withdrawals − DC paid − stock bought from in hand.
 //
 // Use withBalanceGuard() around a write: it measures every person's balance before and after the
 // write inside one transaction, and rolls the write back if someone ends up below zero
 // (only when this change made it worse, so fixing an already-negative balance is never blocked).
 import { Prisma } from '@prisma/client'
 import prisma from '@/lib/prisma'
-import { payoutAmount } from '@/lib/saleMoney'
+import { buildLedger, sumLedger } from '@/lib/personLedger'
 
 type Db = Prisma.TransactionClient
 
@@ -27,35 +28,12 @@ export class NegativeBalanceError extends Error {
 
 const rs = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`
 
-// Order money that counts for the person who received it
-export const orderNet = (s: { soldPrice: number; costPrice: number; quantity: number; receivedAmount: number | null }) =>
-  payoutAmount(s) - s.costPrice * s.quantity
+// The money rules live in lib/personLedger.ts (one list of entries per person); In hand is their sum
+export { orderNet } from '@/lib/personLedger'
 
 export async function inHandByPerson(db: Db): Promise<Map<string, { name: string; inHand: number }>> {
-  const [people, received, expenses, withdrawals, dcPaid] = await Promise.all([
-    db.person.findMany({ select: { id: true, name: true } }),
-    db.sale.findMany({
-      where: { paymentStatus: 'RECEIVED', receivedById: { not: null } },
-      select: { receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true },
-    }),
-    db.expense.findMany({ where: { paidById: { not: null } }, select: { paidById: true, amount: true } }),
-    db.withdrawal.findMany({ select: { personId: true, amount: true } }),
-    db.sale.findMany({
-      where: { dcPaidById: { not: null }, status: { not: 'CANCELLED' } },
-      select: { dcPaidById: true, deliveryCharge: true },
-    }),
-  ])
-
-  const map = new Map(people.map((p) => [p.id, { name: p.name, inHand: 0 }]))
-  const add = (id: string | null, n: number) => {
-    const row = id ? map.get(id) : undefined
-    if (row) row.inHand += n
-  }
-  for (const s of received) add(s.receivedById, orderNet(s))
-  for (const e of expenses) add(e.paidById, -e.amount)
-  for (const w of withdrawals) add(w.personId, -w.amount)
-  for (const s of dcPaid) add(s.dcPaidById, -s.deliveryCharge)
-  return map
+  const [people, ledger] = await Promise.all([db.person.findMany({ select: { id: true, name: true } }), buildLedger(db)])
+  return new Map(people.map((p) => [p.id, { name: p.name, inHand: sumLedger(ledger.get(p.id) || []) }]))
 }
 
 export async function withBalanceGuard<T>(write: (tx: Db) => Promise<T>): Promise<T> {

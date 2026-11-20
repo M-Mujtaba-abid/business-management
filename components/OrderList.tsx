@@ -69,6 +69,8 @@ export interface Sale {
   returnedAt?: string | null // when it was marked Returned
   returnReceived?: boolean // returned parcel physically back with us
   returnReceivedAt?: string | null
+  inventoryItemId?: string | null // sold from our own stock
+  inventoryHeld?: boolean // the stock is currently taken for this row
   reviewStatus?: ReviewStatus // review follow-up after delivery
   reviewStatusAt?: string | null
   // Leopards money for the parcel (filled by the Leopards check)

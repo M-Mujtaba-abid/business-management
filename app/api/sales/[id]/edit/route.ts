@@ -7,6 +7,7 @@ import { parseImages } from '@/lib/orderImages'
 import { destroyPhoto } from '@/lib/cloudinary'
 import type { Sale } from '@prisma/client'
 import { logOrder, nameMaps, orderRef, requestActor, rs } from '@/lib/orderLog'
+import { InventoryError, holdStock, inventoryErrorResponse, itemCost, releaseStock } from '@/lib/inventory'
 
 // Sentinel: the form did not send a photo list, so photos stay as they are
 const NO_PHOTO_CHANGE: { images: never[] } = { images: [] }
@@ -101,6 +102,7 @@ interface EditItemInput {
   categoryId?: string | null
   supplierId?: string | null
   returnedItemId?: string | null
+  inventoryItemId?: string | null // sold from our own stock
   supplierPaymentStatus?: 'PAID' | 'PENDING'
 }
 
@@ -207,6 +209,7 @@ export async function PUT(
       categoryId: string | null
       supplierId: string | null
       returnedItemId: string | null
+      inventoryItemId: string | null
       supplierPaid: boolean
     }[] = []
     for (const [i, it] of rawItems.entries()) {
@@ -226,6 +229,7 @@ export async function PUT(
         categoryId: it.categoryId || null,
         supplierId: it.supplierId || null,
         returnedItemId: it.returnedItemId || null,
+        inventoryItemId: it.returnedItemId ? null : it.inventoryItemId || null,
         supplierPaid: it.supplierPaymentStatus === 'PAID',
       })
     }
@@ -264,7 +268,12 @@ export async function PUT(
     }
 
     // Changing "Received by", DC person or amounts cannot leave anyone below zero
+    const actor = await requestActor(request)
+    // A cancelled order holds no stock; every other order takes it when saved
+    const holdsStock = lead.status !== 'CANCELLED'
     const saved = await withBalanceGuard(async (tx) => {
+      // Removed products: stock from inventory goes back
+      await releaseStock(tx, removed, 'released', 'product removed from the order', actor)
       // Removed products: their returned cover goes back to returned stock, then the row goes
       for (const s of removed) {
         if (s.returnedItemId) {
@@ -294,7 +303,22 @@ export async function PUT(
           if (!r || r.status !== 'AVAILABLE') throw new Error('A returned item you picked is no longer available.')
         }
 
-        const supplierStatus = it.returnedItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
+        // From inventory: the buy price is the item's average cost (kept as it was if the same item stays)
+        let costPrice = it.costPrice
+        if (it.inventoryItemId) {
+          if (prev?.inventoryItemId === it.inventoryItemId) costPrice = prev.costPrice
+          else {
+            const inv = await itemCost(tx, it.inventoryItemId)
+            if (!inv.active) throw new InventoryError(`"${inv.name}" is archived in inventory.`)
+            costPrice = inv.avgCost
+          }
+        }
+        // Stock item or quantity changed: give the old stock back first, take the new below
+        if (prev?.inventoryHeld && (prev.inventoryItemId !== it.inventoryItemId || prev.quantity !== it.quantity)) {
+          await releaseStock(tx, [prev], 'released', 'order edited', actor)
+        }
+
+        const supplierStatus = it.returnedItemId || it.inventoryItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
         const supplierPaidAt =
           supplierStatus === 'PAID' ? (prev?.supplierPaymentStatus === 'PAID' ? prev.supplierPaidAt : new Date()) : null
         const payout = payoutShares ? payoutShares[i] : null
@@ -304,11 +328,12 @@ export async function PUT(
           ...shared,
           productName: it.productName,
           quantity: it.quantity,
-          costPrice: it.costPrice,
+          costPrice,
           soldPrice: it.soldPrice,
           categoryId: it.categoryId,
-          supplierId: it.returnedItemId ? null : it.supplierId,
+          supplierId: it.returnedItemId || it.inventoryItemId ? null : it.supplierId,
           returnedItemId: it.returnedItemId,
+          inventoryItemId: it.inventoryItemId,
           supplierPaymentStatus: supplierStatus as 'PAID' | 'PENDING' | 'NOT_APPLICABLE',
           supplierPaidAt,
           deliveryCharge: dcShares[i],
@@ -348,7 +373,13 @@ export async function PUT(
             data: { status: 'USED', usedInSaleId: row.id },
           })
         }
-        rows.push(row)
+        // Take the stock (does nothing if this row already holds it); refuses if not enough
+        if (holdsStock && row.inventoryItemId) {
+          await holdStock(tx, [row], actor)
+          rows.push(await tx.sale.findUniqueOrThrow({ where: { id: row.id } }))
+        } else {
+          rows.push(row)
+        }
       }
       return rows
     })
@@ -357,7 +388,7 @@ export async function PUT(
     await logEdit(request, existing, saved, photoChange)
     return NextResponse.json({ parcelId, sales: saved, totalSale: saved.reduce((a, s) => a + saleTotal(s), 0) })
   } catch (error: any) {
-    const blocked = balanceErrorResponse(error)
+    const blocked = balanceErrorResponse(error) || inventoryErrorResponse(error)
     if (blocked) return NextResponse.json(blocked, { status: 400 })
     console.error('Edit order error:', error)
     return NextResponse.json({ error: error.message || 'Failed to save changes' }, { status: 500 })

@@ -12,6 +12,8 @@ import RestockWizard from '@/components/ui/RestockWizard'
 import InventoryTab from '@/components/InventoryTab'
 */
 import QuickOrderForm from '@/components/ui/QuickOrderForm'
+import InventoryPage from '@/components/InventoryPage'
+import InventoryMoneyTab from '@/components/InventoryMoneyTab'
 import SupplierPaymentsTab from '@/components/SupplierPaymentsTab'
 import ReceivablesTab from '@/components/ReceivablesTab'
 import PeopleMoneyTab from '@/components/PeopleMoneyTab'
@@ -435,11 +437,8 @@ export default function Home() {
         />
       )}
 
-      {/* OLD INVENTORY FLOW — uncomment to restore
-      {sectionReady && activeSection === 'inventory' && (
-        <InventoryTab onOpenRestock={() => setIsRestockOpen(true)} />
-      )}
-      */}
+      {/* Inventory: our own stock (replaces the old InventoryTab / Product flow) */}
+      {sectionReady && activeSection === 'inventory' && <InventoryPage key={refreshKey} />}
 
       {sectionReady && activeSection === 'finance' && (
         <ExpensesTab key={refreshKey} onOpenExpenseModal={() => setIsExpenseOpen(true)} />
@@ -471,6 +470,7 @@ export default function Home() {
               setActiveSection('orders')
             }}
           />
+          <InventoryMoneyTab onOpenInventory={() => setActiveSection('inventory')} />
           {/* PARTNERS LEDGER — uncomment to restore
           <LedgerTab />
           */}

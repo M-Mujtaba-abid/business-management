@@ -10,6 +10,7 @@ import {
   Settings,
   MessageCircle,
   History,
+  Boxes,
   // PlusCircle, // OLD INVENTORY FLOW (Restock button)
   Plus,
   // RefreshCw, // SEED DEMO DATA button
@@ -58,13 +59,11 @@ export default function Sidebar({
       label: 'Payments',
       icon: Wallet,
     },
-    /* OLD INVENTORY FLOW — uncomment to restore
     {
       id: 'inventory' as NavSection,
-      label: 'Inventory & Stock',
-      icon: Package,
+      label: 'Inventory',
+      icon: Boxes,
     },
-    */
     {
       id: 'finance' as NavSection,
       label: 'Expenses',

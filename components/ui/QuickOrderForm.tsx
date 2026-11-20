@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Sparkles, Package, Truck, CheckCircle2, Fuel, Receipt, Check, Recycle, Plus, Trash2, Pencil, Lock } from 'lucide-react'
+import { X, Sparkles, Package, Truck, CheckCircle2, Fuel, Receipt, Check, Recycle, Plus, Trash2, Pencil, Lock, Boxes } from 'lucide-react'
+import InventoryPicker, { InventoryOption } from './InventoryPicker'
 import { toast } from 'sonner'
 import CreatableSelect, { SelectOption } from './CreatableSelect'
 import type { Sale } from '../OrderList'
@@ -29,6 +30,7 @@ interface QuickOrderFormProps {
 
 const RETURNED_SOURCE = '__returned__'
 const OTHER_SOURCE = '__other__'
+const INVENTORY_SOURCE = '__inventory__' // our own stock (Inventory page)
 
 // One product in the order (a parcel can hold several)
 interface ItemDraft {
@@ -39,9 +41,12 @@ interface ItemDraft {
   returnedLabel?: string // edit mode: name of the returned cover this product already uses
   categoryId: string
   productName: string
-  // supplier id, OTHER_SOURCE (picking/creating a new one) or RETURNED_SOURCE
+  // supplier id, OTHER_SOURCE (picking/creating a new one), RETURNED_SOURCE or INVENTORY_SOURCE
   source: string
   returnedItemId: string
+  inventoryItemId: string
+  // edit mode: the stock this line already holds (counted as available again for this line)
+  heldStock?: { itemId: string; qty: number } | null
   quantity: string
   costPrice: string
   soldPrice: string
@@ -54,6 +59,7 @@ const newItem = (): ItemDraft => ({
   productName: '',
   source: '',
   returnedItemId: '',
+  inventoryItemId: '',
   quantity: '1',
   costPrice: '',
   soldPrice: '',
@@ -108,6 +114,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
   // payment source id, or OTHER_SOURCE while picking/creating a new one
   const [paymentSourceId, setPaymentSourceId] = useState('')
   const [returnedItems, setReturnedItems] = useState<ReturnedItem[]>([])
+  const [inventory, setInventory] = useState<InventoryOption[]>([])
 
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState<ItemDraft[]>([newItem()])
@@ -128,8 +135,10 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
       fetch('/api/payment-sources').then((r) => r.json()),
       fetch('/api/order-sources').then((r) => r.json()),
       fetch('/api/people').then((r) => r.json()),
+      fetch('/api/inventory').then((r) => r.json()),
     ])
-      .then(([cats, sups, rItems, srcs, orderSrcs, ppl]) => {
+      .then(([cats, sups, rItems, srcs, orderSrcs, ppl, inv]) => {
+        if (Array.isArray(inv)) setInventory(inv)
         if (Array.isArray(ppl)) setPeople(ppl)
         if (Array.isArray(orderSrcs)) setOrderSources(orderSrcs)
         if (Array.isArray(srcs)) setPaymentSources(srcs)
@@ -173,7 +182,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     })
     setItems(
       editItems.map((s) => {
-        const source = s.returnedItemId ? RETURNED_SOURCE : s.supplier?.id || ''
+        const source = s.inventoryItemId ? INVENTORY_SOURCE : s.returnedItemId ? RETURNED_SOURCE : s.supplier?.id || ''
         const supplierPaid = s.supplierPaymentStatus === 'PAID'
         return {
           key: s.id,
@@ -182,6 +191,8 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
           productName: s.productName,
           source,
           returnedItemId: s.returnedItemId || '',
+          inventoryItemId: s.inventoryItemId || '',
+          heldStock: s.inventoryItemId && s.inventoryHeld ? { itemId: s.inventoryItemId, qty: s.quantity } : null,
           returnedLabel: s.returnedItemId ? s.productName : undefined,
           quantity: String(s.quantity),
           costPrice: String(s.costPrice),
@@ -342,6 +353,37 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
     return data as SelectOption
   }
 
+  // From inventory: name, category, buy price (average cost) and usual sale price come from the item
+  const handlePickInventory = (itemKey: string, id: string) => {
+    const inv = inventory.find((i) => i.id === id)
+    setItems((prev) =>
+      prev.map((it) =>
+        it.key !== itemKey
+          ? it
+          : inv
+          ? {
+              ...it,
+              inventoryItemId: id,
+              productName: inv.name,
+              categoryId: inv.categoryId || it.categoryId,
+              costPrice: String(inv.avgCost),
+              soldPrice: it.soldPrice || (inv.salePrice != null ? String(inv.salePrice) : ''),
+            }
+          : { ...it, inventoryItemId: '' }
+      )
+    )
+  }
+
+  // How much of an item is still free for one line (other lines of this order use some too)
+  const stockLeftFor = (line: ItemDraft, itemId: string) => {
+    const inv = inventory.find((i) => i.id === itemId)
+    if (!inv) return 0
+    const others = items
+      .filter((o) => o.key !== line.key && o.source === INVENTORY_SOURCE && o.inventoryItemId === itemId)
+      .reduce((a, o) => a + (parseInt(o.quantity, 10) || 1) - (o.heldStock?.itemId === itemId ? o.heldStock.qty : 0), 0)
+    return inv.stockQty - others + (line.heldStock?.itemId === itemId ? line.heldStock.qty : 0)
+  }
+
   const handlePickReturnedItem = (itemKey: string, id: string) => {
     const rItem = returnedItems.find((i) => i.id === id)
     setItems((prev) =>
@@ -444,6 +486,17 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
         setError(`${label}select an item from returned stock.`)
         return
       }
+      if (it.source === INVENTORY_SOURCE) {
+        if (!it.inventoryItemId) {
+          setError(`${label}pick an item from inventory.`)
+          return
+        }
+        const left = stockLeftFor(it, it.inventoryItemId)
+        if ((parseInt(it.quantity, 10) || 1) > left) {
+          setError(`${label}only ${left} left in inventory.`)
+          return
+        }
+      }
     }
 
     // A new order's DC must say whose account it came out of (old orders may have none)
@@ -486,6 +539,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
               : null,
           items: items.map((it) => {
             const isReturned = it.source === RETURNED_SOURCE
+            const isInventory = it.source === INVENTORY_SOURCE
             return {
               id: it.id,
               productName: it.productName,
@@ -493,8 +547,9 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
               quantity: it.quantity,
               costPrice: it.costPrice,
               soldPrice: it.soldPrice,
-              supplierId: !isReturned && it.source && it.source !== OTHER_SOURCE ? it.source : null,
+              supplierId: !isReturned && !isInventory && it.source && it.source !== OTHER_SOURCE ? it.source : null,
               returnedItemId: isReturned ? it.returnedItemId : null,
+              inventoryItemId: isInventory ? it.inventoryItemId : null,
               supplierPaymentStatus: it.supplierPaid ? 'PAID' : 'PENDING',
             }
           }),
@@ -822,7 +877,34 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                             <Recycle className="h-3.5 w-3.5" /> Returned stock ({availableReturned.length})
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => chooseSupplier(it.key, INVENTORY_SOURCE)}
+                          className={chipClass(it.source === INVENTORY_SOURCE)}
+                          title="Sell from our own stock (Inventory page)"
+                        >
+                          <Boxes className="h-3.5 w-3.5" /> From inventory ({inventory.filter((i) => i.stockQty > 0).length})
+                        </button>
                       </div>
+
+                      {it.source === INVENTORY_SOURCE && (
+                        <div className="mt-2">
+                          <InventoryPicker
+                            items={inventory}
+                            value={it.inventoryItemId}
+                            onChange={(id) => handlePickInventory(it.key, id)}
+                            usedElsewhere={Object.fromEntries(
+                              inventory.map((inv) => [inv.id, inv.stockQty - stockLeftFor(it, inv.id)])
+                            )}
+                            autoOpen={!it.inventoryItemId}
+                          />
+                          {it.inventoryItemId && (
+                            <p className="mt-1 text-[11px] text-teal-700">
+                              {stockLeftFor(it, it.inventoryItemId)} left · buy price is the item&apos;s average cost · stock is taken when you save
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {it.source === OTHER_SOURCE && (
                         <div className="mt-2">
@@ -877,7 +959,9 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                           value={it.costPrice}
                           onChange={(e) => setItem(it.key, { costPrice: e.target.value })}
                           placeholder="1200"
-                          className={inputClass}
+                          readOnly={it.source === INVENTORY_SOURCE}
+                          title={it.source === INVENTORY_SOURCE ? 'Average cost of the stock (set on the Inventory page)' : undefined}
+                          className={`${inputClass} ${it.source === INVENTORY_SOURCE ? 'bg-slate-100 text-slate-500' : ''}`}
                         />
                       </div>
                       <div>
@@ -894,7 +978,7 @@ export default function QuickOrderForm({ isOpen, onClose, onSuccess, editItems }
                     </div>
 
                     {/* Supplier payment for this product */}
-                    {it.source !== RETURNED_SOURCE && (
+                    {it.source !== RETURNED_SOURCE && it.source !== INVENTORY_SOURCE && (
                       <div className="flex items-center justify-between bg-slate-100/50 border border-slate-300/60 rounded-xl px-3 py-2">
                         <span className="text-xs font-semibold text-slate-700">Supplier payment</span>
                         <div className="flex gap-1">

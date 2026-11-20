@@ -70,7 +70,7 @@ export default function AppShell({
       case 'orders':
         return 'Orders'
       case 'inventory':
-        return 'Inventory & Product Catalog'
+        return 'Inventory'
       case 'finance':
         return 'Expenses'
       case 'partners-suppliers':
@@ -100,6 +100,8 @@ export default function AppShell({
         return 'Link the number, edit customer messages and read chats'
       case 'logs':
         return 'Who did what to each order, and when (by hand and automatic)'
+      case 'inventory':
+        return 'Our own stock: buy, keep and sell from it'
       case 'settings':
         return 'WhatsApp on / off, categories and delivery rates'
       default:

@@ -324,7 +324,13 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                       className="h-4 w-4 accent-emerald-500"
                     />
                     <Recycle className="h-3.5 w-3.5 text-emerald-600" />
-                    {isParcel ? 'Covers came back (go to Returned stock)' : 'Cover came back (goes to Returned stock)'}
+                    {group.items.some((i) => i.inventoryItemId)
+                      ? isParcel
+                        ? 'Items came back (inventory items go back into Inventory)'
+                        : 'Item came back (goes back into Inventory)'
+                      : isParcel
+                      ? 'Covers came back (go to Returned stock)'
+                      : 'Cover came back (goes to Returned stock)'}
                   </label>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-600 shrink-0">Loss (Rs)</span>
@@ -457,7 +463,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs text-slate-600 flex items-center gap-1 min-w-0">
                           <Wallet className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                          <span className="truncate">{item.supplier?.name || (item.returnedItemId ? '♻ Returned stock' : 'No supplier')}</span>
+                          <span className="truncate">{item.supplier?.name || (item.returnedItemId ? '♻ Returned stock' : item.inventoryItemId ? '📦 From inventory' : 'No supplier')}</span>
                         </span>
                         {tracked ? (
                           <div className="flex gap-1 shrink-0">

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { payoutAmount, countOrders } from '@/lib/saleMoney'
+import { countOrders } from '@/lib/saleMoney'
+import { buildLedger, orderNet, sumLedger } from '@/lib/personLedger'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,15 +31,19 @@ export async function GET(request: NextRequest) {
     const inRange = (date: Date | null) =>
       !!date && (!range.gte || date >= range.gte) && (!range.lte || date <= range.lte)
 
-    const [people, received, expected, expenses, withdrawals, dcPaid] = await Promise.all([
+    const ledger = await buildLedger(prisma)
+    // Last bank check of each person (shown on their card)
+    const lastChecks = await prisma.bankCheck.findMany({ orderBy: { createdAt: 'desc' }, distinct: ['personId'] })
+    const lastCheckOf = new Map(lastChecks.map((c) => [c.personId, c]))
+    const [people, received, expected, expenses, withdrawals, dcPaid, stockPaid] = await Promise.all([
       prisma.person.findMany({ orderBy: { name: 'asc' } }),
       prisma.sale.findMany({
         where: { paymentStatus: 'RECEIVED' },
-        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, paymentReceivedAt: true },
+        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, paymentReceivedAt: true, inventoryItemId: true },
       }),
       prisma.sale.findMany({
         where: { paymentStatus: 'NOT_RECEIVED', status: 'DELIVERED' },
-        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true },
+        select: { id: true, parcelId: true, receivedById: true, soldPrice: true, costPrice: true, quantity: true, receivedAmount: true, inventoryItemId: true },
       }),
       prisma.expense.findMany({
         where: { paidById: { not: null } },
@@ -51,11 +56,13 @@ export async function GET(request: NextRequest) {
         where: { dcPaidById: { not: null }, status: { not: 'CANCELLED' } },
         select: { id: true, parcelId: true, dcPaidById: true, deliveryCharge: true, createdAt: true },
       }),
+      // Stock bought (Inventory): from in hand lowers the balance; from savings is an investment
+      prisma.stockPayment.findMany({ select: { personId: true, amount: true, kind: true, purchaseId: true, createdAt: true } }),
     ])
 
-    // Actual payout (edited received amount, else full sale) minus the cover cost owed to the supplier
-    const net = (s: { soldPrice: number; costPrice: number; quantity: number; receivedAmount: number | null }) =>
-      payoutAmount(s) - s.costPrice * s.quantity
+    // Same formula as lib/balanceGuard.ts (orderNet): payout minus the cover cost owed to the supplier;
+    // stock sold from our inventory was already paid when bought, so its full payout counts
+    const net = orderNet
     const sum = (list: number[]) => list.reduce((acc, n) => acc + n, 0)
 
     const build = (id: string | null, name: string) => {
@@ -68,6 +75,10 @@ export async function GET(request: NextRequest) {
       const takenInPeriod = taken.filter((w) => inRange(w.createdAt))
       const dc = id ? dcPaid.filter((s) => s.dcPaidById === id) : []
       const dcInPeriod = dc.filter((s) => inRange(s.createdAt))
+      const mine = id ? stockPaid.filter((p) => p.personId === id) : []
+      const stockFromHand = mine.filter((p) => p.kind === 'BUSINESS')
+      const stockFromHandInPeriod = stockFromHand.filter((p) => inRange(p.createdAt))
+      const savings = mine.filter((p) => p.kind === 'SAVINGS')
 
       return {
         id,
@@ -80,11 +91,12 @@ export async function GET(request: NextRequest) {
         withdrawnCount: takenInPeriod.length,
         dcAmount: sum(dcInPeriod.map((s) => s.deliveryCharge)),
         dcCount: countOrders(dcInPeriod),
-        inHand:
-          sum(got.map(net)) -
-          sum(spent.map((e) => e.amount)) -
-          sum(taken.map((w) => w.amount)) -
-          sum(dc.map((s) => s.deliveryCharge)),
+        stockAmount: sum(stockFromHandInPeriod.map((p) => p.amount)),
+        stockCount: new Set(stockFromHandInPeriod.map((p) => p.purchaseId)).size,
+        investedAmount: sum(savings.map((p) => p.amount)), // all time, from personal savings
+        // All time, from the person's money statement (same entries as the Statement window)
+        inHand: id ? sumLedger(ledger.get(id) || []) : sum(got.map(net)),
+        lastBankCheck: id ? lastCheckOf.get(id) ?? null : null,
         expectedAmount: sum(coming.map(net)),
         expectedCount: countOrders(coming),
       }

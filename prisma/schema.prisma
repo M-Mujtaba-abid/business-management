@@ -140,8 +140,10 @@ model Supplier {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  purchases     InventoryPurchase[]
-  sales         Sale[]
+  purchases      InventoryPurchase[]
+  sales          Sale[]
+  inventoryItems InventoryItem[]
+  stockPurchases StockPurchase[]
 }
 
 model Category {
@@ -149,8 +151,9 @@ model Category {
   name          String         @unique
   createdAt     DateTime       @default(now())
 
-  sales         Sale[]
-  returnedItems ReturnedItem[]
+  sales          Sale[]
+  returnedItems  ReturnedItem[]
+  inventoryItems InventoryItem[]
 }
 
 // Person whose account the order money lands in (Mujtaba, Noman, ...)
@@ -164,6 +167,27 @@ model Person {
   expenses    Expense[]
   withdrawals Withdrawal[]
   users       User[]
+  stockPayments StockPayment[]
+  bankChecks  BankCheck[]
+}
+
+// Bank check (reconciliation): the real balance in the person's business bank account on a date,
+// compared with their In hand in the app at that moment. difference = bankBalance - inHand
+// (0 = everything matches). Accounts hold business money only, so they should always be equal.
+model BankCheck {
+  id           String   @id @default(cuid())
+  personId     String
+  bankName     String   // e.g. Meezan, Mashreq
+  bankBalance  Float
+  inHand       Float    // the app's In hand when checked
+  difference   Float
+  note         String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  person       Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId, createdAt])
 }
 
 // Someone who can log in to the app. Passwords are stored only as a scrypt hash
@@ -317,10 +341,15 @@ model Sale {
   // Review follow-up (shared by a parcel's products). Becomes PENDING when the order is delivered.
   reviewStatus           ReviewStatus @default(NONE)
   reviewStatusAt         DateTime?
+  // Sold from our own stock (Inventory page). inventoryHeld = the stock is currently taken out for this
+  // row (false once given back on cancel / return / delete), so stock is never given back twice.
+  inventoryItemId        String?
+  inventoryHeld          Boolean     @default(false)
   createdAt              DateTime    @default(now())
   updatedAt              DateTime    @updatedAt
 
   product                Product?    @relation(fields: [productId], references: [id])
+  inventoryItem          InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
   category               Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   supplier               Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   paymentSource          PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: SetNull)
@@ -341,6 +370,7 @@ model Sale {
   @@index([orderSourceId])
   @@index([receivedById])
   @@index([dcPaidById])
+  @@index([inventoryItemId])
   @@index([parcelId])
   @@index([orderNo])
   @@index([externalOrderId])
@@ -458,4 +488,95 @@ model OrderLog {
   @@index([orderNo, createdAt])
   @@index([saleId])
   @@index([createdAt])
+}
+
+// ── Inventory: our own stock (bought, kept, then sold from the order form "From inventory") ──
+
+// One thing we keep in stock. avgCost = weighted average buy price of what is in stock.
+model InventoryItem {
+  id          String    @id @default(cuid())
+  name        String
+  categoryId  String?
+  supplierId  String?   // usual supplier (each purchase can still name its own)
+  stockQty    Int       @default(0)
+  avgCost     Float     @default(0)
+  salePrice   Float?    // usual selling price, pre-filled in the order form
+  lowStockAt  Int?      // warn when stock is at or below this
+  active      Boolean   @default(true) // false = archived (hidden)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplier    Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchases   StockPurchase[]
+  logs        InventoryLog[]
+  sales       Sale[]
+
+  @@index([active])
+  @@index([name])
+}
+
+// Buying stock: who paid, and whether it came from business money (in hand) or personal savings
+enum StockPaymentKind {
+  BUSINESS // from the person's business money in hand (lowers their In hand)
+  SAVINGS  // from the person's own savings: an investment in the business
+}
+
+model StockPurchase {
+  id          String    @id @default(cuid())
+  itemId      String
+  quantity    Int
+  unitCost    Float
+  totalCost   Float
+  supplierId  String?
+  note        String?
+  createdBy   String?   // user name
+  createdAt   DateTime  @default(now())
+
+  item        InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  supplier    Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  payments    StockPayment[]
+
+  @@index([itemId])
+  @@index([createdAt])
+}
+
+model StockPayment {
+  id          String           @id @default(cuid())
+  purchaseId  String
+  personId    String
+  amount      Float
+  kind        StockPaymentKind
+  createdAt   DateTime         @default(now())
+
+  purchase    StockPurchase    @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  person      Person           @relation(fields: [personId], references: [id])
+
+  @@index([personId])
+  @@index([purchaseId])
+}
+
+// Every stock movement of an item: bought, sold, given back, adjusted, edited
+model InventoryLog {
+  id          String     @id @default(cuid())
+  itemId      String
+  action      String     // created | stock_in | sold | released | returned_back | adjusted | edited | archived
+  qtyChange   Int        @default(0)
+  qtyAfter    Int
+  unitCost    Float?
+  amount      Float?
+  orderNo     Int?
+  saleId      String?
+  purchaseId  String?
+  message     String
+  source      LogSource
+  actor       String?
+  details     Json?
+  createdAt   DateTime   @default(now())
+
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, createdAt])
+  @@index([createdAt])
+  @@index([orderNo])
 }

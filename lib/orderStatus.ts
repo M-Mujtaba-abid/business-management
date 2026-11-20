@@ -3,6 +3,7 @@ import type { OrderStatus, Sale } from '@prisma/client'
 import { deliveredProfit, splitByWeight } from '@/lib/saleMoney'
 import { notifyOrder, kindForStatus } from '@/lib/whatsapp'
 import { Actor, SYSTEM, logOrder, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
+import { holdStock, releaseStock } from '@/lib/inventory'
 
 // Changing an order's status, shared by the Orders page (PATCH /api/sales/[id]) and the
 // Leopards status push (/api/leopards/push), so both do exactly the same thing.
@@ -70,7 +71,8 @@ export async function changeParcelStatus(sales: Sale[], change: StatusChange): P
       }
 
       // Entering RETURNED with the covers back in hand: add them to returned stock
-      if (targetStatus === 'RETURNED' && prevStatus !== 'RETURNED' && coverReturned) {
+      // (items from our own inventory go back into that inventory item instead, below)
+      if (targetStatus === 'RETURNED' && prevStatus !== 'RETURNED' && coverReturned && !sale.inventoryItemId) {
         await tx.returnedItem.create({
           data: {
             productName: sale.productName,
@@ -108,6 +110,21 @@ export async function changeParcelStatus(sales: Sale[], change: StatusChange): P
           },
         })
       )
+    }
+
+    // Our own inventory: cancelled → stock back; returned with the item back → back into the item;
+    // an active status again (Packing / Dispatched / Delivered) → take it again (refuses if not enough)
+    const actor = change.actor || SYSTEM
+    const prev = sales[0].status
+    if (prev !== targetStatus && rows.some((r) => r.inventoryItemId)) {
+      if (targetStatus === 'CANCELLED') {
+        await releaseStock(tx, rows, 'released', 'order cancelled', actor)
+      } else if (targetStatus === 'RETURNED') {
+        if (coverReturned) await releaseStock(tx, rows, 'returned_back', 'order returned, item came back', actor)
+      } else {
+        await holdStock(tx, rows, actor)
+      }
+      for (let i = 0; i < rows.length; i++) rows[i] = await tx.sale.findUniqueOrThrow({ where: { id: rows[i].id } })
     }
     return rows
   })

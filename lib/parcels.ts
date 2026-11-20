@@ -33,7 +33,9 @@ export function groupSales(sales: Sale[]): OrderGroup[] {
 
   return Array.from(map.entries()).map(([key, items]) => {
     const tracked = items.filter((i) => i.supplierPaymentStatus !== 'NOT_APPLICABLE')
-    const names = items.map((i) => i.supplier?.name || (i.returnedItemId ? 'Returned stock' : null)).filter(Boolean) as string[]
+    const names = items
+      .map((i) => i.supplier?.name || (i.returnedItemId ? 'Returned stock' : i.inventoryItemId ? 'Inventory' : null))
+      .filter(Boolean) as string[]
     return {
       key,
       lead: items[0],

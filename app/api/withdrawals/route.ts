@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
+import { capitalByPerson } from '@/lib/capital'
+
+class CapitalError extends Error {}
 
 export const dynamic = 'force-dynamic'
 
@@ -38,8 +41,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { personId, amount, reason } = await request.json()
+    const { personId, amount, reason, type } = await request.json()
     const amt = parseFloat(amount)
+    // PROFIT (default) = business money for yourself; CAPITAL = taking back money you invested
+    const kind: 'PROFIT' | 'CAPITAL' = type === 'CAPITAL' ? 'CAPITAL' : 'PROFIT'
 
     if (!personId) {
       return NextResponse.json({ error: 'Select a person' }, { status: 400 })
@@ -48,21 +53,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Enter a valid amount' }, { status: 400 })
     }
 
-    // Cannot take out more than the person holds
-    const withdrawal = await withBalanceGuard((tx) =>
-      tx.withdrawal.create({
+    // Cannot take out more than the person holds; capital back cannot be more than they put in
+    const withdrawal = await withBalanceGuard(async (tx) => {
+      if (kind === 'CAPITAL') {
+        const cap = (await capitalByPerson(tx)).find((c) => c.id === personId)
+        if (!cap || amt > cap.net + 0.5) {
+          throw new CapitalError(
+            `${cap?.name || 'This person'} has Rs. ${Math.round(Math.max(0, cap?.net || 0)).toLocaleString('en-PK')} of capital in the business. Cannot take back more than that.`
+          )
+        }
+      }
+      return tx.withdrawal.create({
         data: {
           personId,
           amount: amt,
+          type: kind,
           reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null,
         },
         include: { person: true },
       })
-    )
+    })
     return NextResponse.json(withdrawal, { status: 201 })
   } catch (error: any) {
     const blocked = balanceErrorResponse(error)
     if (blocked) return NextResponse.json(blocked, { status: 400 })
+    if (error instanceof CapitalError) return NextResponse.json({ error: error.message }, { status: 400 })
     return NextResponse.json({ error: error.message || 'Failed to save withdrawal' }, { status: 500 })
   }
 }

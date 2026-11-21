@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Loader2, Landmark, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import AddMoneyDialog from './AddMoney'
 
 // Bank check: type the real balance from the bank app; the app compares it with In hand.
 // Business-only accounts and no cash, so the two should be equal. If not, the statement lines
@@ -64,6 +65,8 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<BankCheckRow | null>(null)
+  const [fixing, setFixing] = useState(false)
+  const [hasOpening, setHasOpening] = useState(false)
   const [mounted, setMounted] = useState(false)
   const closeRef = React.useRef(onClose)
   closeRef.current = onClose
@@ -78,6 +81,10 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
         setBankName(d.bankName || '')
       })
       .catch((e) => toast.error(e.message))
+    fetch(`/api/people/${personId}/money-entries`)
+      .then((r) => r.json())
+      .then((d) => setHasOpening(Boolean(d?.opening)))
+      .catch(() => {})
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -204,7 +211,34 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
                       <li>Check the lines below against the bank app, one by one.</li>
                     </ul>
                   )}
+                  {Math.abs(result.difference) >= MATCH && (
+                    <button
+                      onClick={() => setFixing(true)}
+                      className="mt-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700"
+                    >
+                      Fix this difference ({result.difference > 0 ? '+' : '−'}
+                      {rs(Math.abs(result.difference))}) →
+                    </button>
+                  )}
                 </div>
+              )}
+              {fixing && result && (
+                <AddMoneyDialog
+                  personId={personId}
+                  name={name}
+                  // bank has MORE: money in that the app does not know (opening balance first, else investment)
+                  // bank has LESS: a negative adjustment (after checking for a missing withdrawal / expense)
+                  initialKind={result.difference > 0 ? (hasOpening ? 'INVESTMENT' : 'OPENING') : 'ADJUSTMENT'}
+                  initialAmount={result.difference}
+                  initialNote={result.difference < 0 ? 'bank has less than the app' : ''}
+                  onClose={() => setFixing(false)}
+                  onSaved={() => {
+                    setFixing(false)
+                    setResult(null)
+                    onSaved?.()
+                    toast.info('Saved. Do the bank check again to confirm it matches ✓')
+                  }}
+                />
               )}
 
               {/* What changed since the last matched check */}

@@ -169,6 +169,7 @@ model Person {
   users       User[]
   stockPayments StockPayment[]
   bankChecks  BankCheck[]
+  moneyEntries MoneyEntry[]
 }
 
 // Bank check (reconciliation): the real balance in the person's business bank account on a date,
@@ -207,17 +208,49 @@ model User {
 }
 
 // Money a person takes out of the business money they hold
+// PROFIT = taking business money for yourself; CAPITAL = taking back money you invested
+enum WithdrawalType {
+  PROFIT
+  CAPITAL
+}
+
 model Withdrawal {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   personId  String
   amount    Float
   reason    String?
-  createdAt DateTime @default(now())
+  type      WithdrawalType @default(PROFIT)
+  createdAt DateTime       @default(now())
 
   person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
 
   @@index([personId])
   @@index([createdAt])
+}
+
+// Money added to (or corrected in) a person's In hand that is not an order, expense or withdrawal:
+//  OPENING    – what was already in their business account when the app started (one per person)
+//  INVESTMENT – their own personal money put into the business (also counts as their capital)
+//  ADJUSTMENT – a correction with a reason (bank profit, fee, unexplained difference); + or −
+enum MoneyEntryKind {
+  OPENING
+  INVESTMENT
+  ADJUSTMENT
+}
+
+model MoneyEntry {
+  id         String         @id @default(cuid())
+  personId   String
+  kind       MoneyEntryKind
+  amount     Float          // + adds to In hand, − takes from it (only ADJUSTMENT can be negative)
+  date       DateTime       // when it happened (opening: the first order's date)
+  note       String?
+  createdBy  String?
+  createdAt  DateTime       @default(now())
+
+  person     Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId, date])
 }
 
 // Where the order came from (Daraz, Website, OLX, Marketplace, ...)

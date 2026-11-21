@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History, ChevronDown, Truck, ScrollText, Landmark } from 'lucide-react'
 import PersonStatement from './PersonStatement'
 import BankCheckDialog, { BankCheckBadge, BankCheckRow } from './BankCheck'
+import AddMoneyDialog from './AddMoney'
 import { toast } from 'sonner'
 import { formatDateTime } from '@/lib/format'
 
@@ -32,6 +33,7 @@ interface Withdrawal {
   personId: string
   amount: number
   reason: string | null
+  type?: 'PROFIT' | 'CAPITAL'
   createdAt: string
 }
 
@@ -91,6 +93,8 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
   const [withdrawFor, setWithdrawFor] = useState<string | null>(null)
   const [wAmount, setWAmount] = useState('')
   const [wReason, setWReason] = useState('')
+  const [wType, setWType] = useState<'PROFIT' | 'CAPITAL'>('PROFIT')
+  const [addMoneyFor, setAddMoneyFor] = useState<{ id: string; name: string } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   const [statementFor, setStatementFor] = useState<{ id: string; name: string } | null>(null)
@@ -140,6 +144,7 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
     setWithdrawFor(personId)
     setWAmount('')
     setWReason('')
+    setWType('PROFIT')
   }
 
   const saveWithdrawal = async (e: React.FormEvent) => {
@@ -161,7 +166,7 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
       const res = await fetch('/api/withdrawals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ personId: withdrawFor, amount: amt, reason: wReason }),
+        body: JSON.stringify({ personId: withdrawFor, amount: amt, reason: wReason, type: wType }),
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to save withdrawal')
       toast.success('Withdrawal saved')
@@ -371,6 +376,27 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                       <div className="text-[11px] text-slate-500">
                         Max you can withdraw: <span className="font-mono font-semibold text-slate-700">{formatPKR(Math.max(0, p.inHand))}</span>
                       </div>
+                      {/* Profit = business money for yourself · Capital = your own invested money back */}
+                      <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 p-0.5">
+                        {(
+                          [
+                            ['PROFIT', 'Profit withdrawal'],
+                            ['CAPITAL', 'Capital taken back'],
+                          ] as const
+                        ).map(([v, l]) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setWType(v)}
+                            className={`rounded-md px-2 py-1.5 text-[11px] font-bold ${wType === v ? (v === 'PROFIT' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-white') : 'text-slate-500'}`}
+                          >
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        {wType === 'PROFIT' ? 'Business money taken for yourself.' : 'Taking back your own money that you invested (lowers your capital too).'}
+                      </p>
                       <input
                         type="text"
                         value={wReason}
@@ -398,7 +424,12 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                         myWithdrawals.map((w) => (
                           <div key={w.id} className="flex items-center justify-between gap-2 text-xs">
                             <div className="min-w-0">
-                              <div className="font-mono font-semibold text-slate-800">{formatPKR(w.amount)}</div>
+                              <div className="font-mono font-semibold text-slate-800">
+                                {formatPKR(w.amount)}
+                                {w.type === 'CAPITAL' && (
+                                  <span className="ml-1.5 rounded bg-amber-100 px-1 py-px font-sans text-[10px] font-bold text-amber-800">capital back</span>
+                                )}
+                              </div>
                               <div className="text-[11px] text-slate-500 truncate">
                                 {new Date(w.createdAt).toLocaleDateString()}
                                 {w.reason ? ` · ${w.reason}` : ''}
@@ -457,6 +488,13 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                           <Landmark className="h-3.5 w-3.5" /> Check bank
                         </button>
                       </div>
+                      <button
+                        onClick={() => setAddMoneyFor({ id: p.id as string, name: p.name })}
+                        className="w-full px-2 py-1.5 rounded-lg border border-dashed border-violet-300 text-violet-700 hover:bg-violet-50 text-[11px] font-semibold flex items-center justify-center gap-1"
+                        title="Opening balance, investment (own money in) or an adjustment"
+                      >
+                        + Add money (opening balance / investment / adjustment)
+                      </button>
                       <BankCheckBadge check={p.lastBankCheck} />
                     </>
                   )}
@@ -480,6 +518,18 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
       )}
       {bankCheckFor && (
         <BankCheckDialog personId={bankCheckFor.id} name={bankCheckFor.name} onClose={() => setBankCheckFor(null)} onSaved={fetchAll} />
+      )}
+      {addMoneyFor && (
+        <AddMoneyDialog
+          personId={addMoneyFor.id}
+          name={addMoneyFor.name}
+          onClose={() => setAddMoneyFor(null)}
+          onSaved={() => {
+            setAddMoneyFor(null)
+            fetchAll()
+            onChanged?.()
+          }}
+        />
       )}
     </div>
   )

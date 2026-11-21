@@ -14,6 +14,7 @@ import InventoryTab from '@/components/InventoryTab'
 import QuickOrderForm from '@/components/ui/QuickOrderForm'
 import InventoryPage from '@/components/InventoryPage'
 import InventoryMoneyTab from '@/components/InventoryMoneyTab'
+import CapitalTab from '@/components/CapitalTab'
 import SupplierPaymentsTab from '@/components/SupplierPaymentsTab'
 import ReceivablesTab from '@/components/ReceivablesTab'
 import PeopleMoneyTab from '@/components/PeopleMoneyTab'
@@ -490,6 +491,7 @@ export default function Home() {
             }}
           />
           <InventoryMoneyTab onOpenInventory={() => setActiveSection('inventory')} />
+          <CapitalTab refreshKey={refreshKey} />
           {/* PARTNERS LEDGER — uncomment to restore
           <LedgerTab />
           */}

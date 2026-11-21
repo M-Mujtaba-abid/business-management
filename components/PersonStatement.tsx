@@ -2,12 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Loader2, Download, ShoppingBag, Receipt, ArrowDownToLine, Truck, Boxes } from 'lucide-react'
+import { X, Loader2, Download, ShoppingBag, Receipt, ArrowDownToLine, Truck, Boxes, Flag, PiggyBank, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 // A person's "In hand" statement: opening balance, every amount in / out with the running balance,
 // and the closing balance (= the In hand number on their card).
 
-type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock'
+type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment'
 interface Entry {
   id: string
   date: string
@@ -16,6 +17,7 @@ interface Entry {
   title: string
   detail: string
   orderNo?: number | null
+  refId?: string
   balance: number
 }
 interface Statement {
@@ -33,6 +35,9 @@ const KIND: Record<Kind, { label: string; icon: React.ElementType; tone: string 
   withdrawal: { label: 'Withdrawal', icon: ArrowDownToLine, tone: 'bg-rose-100 text-rose-700' },
   dc: { label: 'Delivery charge', icon: Truck, tone: 'bg-sky-100 text-sky-700' },
   stock: { label: 'Stock bought', icon: Boxes, tone: 'bg-teal-100 text-teal-700' },
+  opening: { label: 'Opening balance', icon: Flag, tone: 'bg-violet-100 text-violet-700' },
+  investment: { label: 'Investment', icon: PiggyBank, tone: 'bg-emerald-100 text-emerald-800' },
+  adjustment: { label: 'Adjustment', icon: SlidersHorizontal, tone: 'bg-amber-100 text-amber-800' },
 }
 
 const rs = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`
@@ -68,6 +73,7 @@ export default function PersonStatement({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const [reload, setReload] = useState(0)
   useEffect(() => {
     const qs = new URLSearchParams()
     if (from) qs.set('from', from)
@@ -81,7 +87,17 @@ export default function PersonStatement({
         setData(d)
       })
       .catch((e) => setError(e.message))
-  }, [personId, from, to])
+  }, [personId, from, to, reload])
+
+  // Remove a wrong opening balance / investment / adjustment
+  const deleteEntry = async (e: Entry) => {
+    if (!confirm(`Delete "${e.title}" ${e.amount >= 0 ? '+' : '−'}${rs(Math.abs(e.amount))}?`)) return
+    const res = await fetch(`/api/money-entries/${e.refId}`, { method: 'DELETE' })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) return toast.error(d.error || 'Could not delete')
+    toast.success('Deleted')
+    setReload((n) => n + 1)
+  }
 
   const shown = useMemo(() => (data ? data.entries.filter((e) => kind === 'all' || e.kind === kind) : []), [data, kind])
 
@@ -242,6 +258,14 @@ export default function PersonStatement({
                               <div className="min-w-0">
                                 <div className="font-semibold text-slate-800">{e.title}</div>
                                 {e.detail && <div className="text-[11px] text-slate-500">{e.detail}</div>}
+                                {(e.kind === 'opening' || e.kind === 'investment' || e.kind === 'adjustment') && e.refId && (
+                                  <button
+                                    onClick={() => deleteEntry(e)}
+                                    className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 hover:text-rose-600"
+                                  >
+                                    <Trash2 className="h-3 w-3" /> Delete
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </td>

@@ -9,12 +9,16 @@
 //  − withdrawal             Withdrawal.personId
 //  − delivery charge (DC)   Sale.dcPaidById, by order date, cancelled orders left out
 //  − stock bought           StockPayment kind BUSINESS (from in hand; savings are not in-hand money)
+//  + opening balance        MoneyEntry OPENING (money already in the account when the app started)
+//  + investment             MoneyEntry INVESTMENT (own money put in; also the person's capital)
+//  ± adjustment             MoneyEntry ADJUSTMENT (a correction with a reason)
+//  − capital taken back     Withdrawal type CAPITAL (shown apart from profit withdrawals)
 import type { Prisma } from '@prisma/client'
 import { payoutAmount } from '@/lib/saleMoney'
 
 type Db = Prisma.TransactionClient
 
-export type LedgerKind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock'
+export type LedgerKind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment'
 
 export interface LedgerEntry {
   id: string // stable key (e.g. "order:#1194", "exp:<id>")
@@ -25,6 +29,7 @@ export interface LedgerEntry {
   title: string
   detail: string
   orderNo?: number | null
+  refId?: string // MoneyEntry / Withdrawal id (so the statement can offer Delete)
 }
 
 // Order money that counts for the person who received it (see header)
@@ -42,7 +47,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 // All entries, grouped by person (only people that exist). personId limits it to one person.
 export async function buildLedger(db: Db, personId?: string): Promise<Map<string, LedgerEntry[]>> {
   const only = (field: string) => (personId ? { [field]: personId } : { [field]: { not: null } })
-  const [people, received, expenses, withdrawals, dcPaid, stockPaid] = await Promise.all([
+  const [people, received, expenses, withdrawals, dcPaid, stockPaid, moneyEntries] = await Promise.all([
     db.person.findMany({ where: personId ? { id: personId } : {}, select: { id: true } }),
     db.sale.findMany({
       where: { paymentStatus: 'RECEIVED', ...only('receivedById') },
@@ -64,7 +69,7 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       },
     }),
     db.expense.findMany({ where: only('paidById'), select: { id: true, paidById: true, amount: true, title: true, note: true, createdAt: true } }),
-    db.withdrawal.findMany({ where: personId ? { personId } : {}, select: { id: true, personId: true, amount: true, reason: true, createdAt: true } }),
+    db.withdrawal.findMany({ where: personId ? { personId } : {}, select: { id: true, personId: true, amount: true, reason: true, type: true, createdAt: true } }),
     db.sale.findMany({
       where: { status: { not: 'CANCELLED' }, deliveryCharge: { gt: 0 }, ...only('dcPaidById') },
       select: { id: true, orderNo: true, parcelId: true, dcPaidById: true, deliveryCharge: true, customerName: true, city: true, createdAt: true },
@@ -79,6 +84,7 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
         purchase: { select: { quantity: true, unitCost: true, totalCost: true, item: { select: { name: true } } } },
       },
     }),
+    db.moneyEntry.findMany({ where: personId ? { personId } : {}, select: { id: true, personId: true, kind: true, amount: true, date: true, note: true, createdBy: true } }),
   ])
 
   const map = new Map<string, LedgerEntry[]>(people.map((p) => [p.id, []]))
@@ -133,8 +139,24 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       date: w.createdAt,
       kind: 'withdrawal',
       amount: -w.amount,
-      title: 'Withdrawal',
+      title: w.type === 'CAPITAL' ? 'Capital taken back' : 'Withdrawal (profit)',
       detail: w.reason || '',
+      refId: w.id,
+    })
+  }
+
+  // ± Opening balance / investment / adjustment
+  const KIND_WORD = { OPENING: 'Opening balance', INVESTMENT: 'Investment (own money in)', ADJUSTMENT: 'Adjustment' } as const
+  for (const m of moneyEntries) {
+    push({
+      id: `me:${m.id}`,
+      personId: m.personId,
+      date: m.date,
+      kind: m.kind.toLowerCase() as LedgerKind,
+      amount: m.amount,
+      title: KIND_WORD[m.kind],
+      detail: [m.note, m.createdBy ? `by ${m.createdBy}` : ''].filter(Boolean).join(' · '),
+      refId: m.id,
     })
   }
 

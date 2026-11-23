@@ -49,9 +49,11 @@ export function buildPaymentAlert(changes: PaymentChange[]): string {
       return [
         head,
         `Invoice: ${first.invoiceNo || '—'}${first.invoiceDate ? ` · ${first.invoiceDate}` : ''}${first.method ? ` · ${first.method}` : ''}`,
-        ...list.map((c) => `${c.orderNo != null ? `#${c.orderNo}` : '—'} ${c.customer}: *${rs(c.payout)}* (COD ${rs(c.cod)} − ${rs(c.charges)})`),
+        ...list.map((c) => `${c.orderNo != null ? `#${c.orderNo}` : '—'} ${c.customer}: *${rs(c.payout)}* (COD ${rs(c.cod)} − charges & tax ${rs(c.charges)})`),
         `Total: *${rs(total)}*${people.length ? ` → ${people.join(', ')}` : ''}`,
-        first.payment === 'PAID' ? 'Orders marked Received in the app.' : 'Orders stay Not received until Leopards pays.',
+        first.payment === 'PAID'
+          ? 'Orders marked Received in the app.'
+          : 'When the money reaches the bank, press "Money received" on this invoice in the app (Payments → Leopards payments).',
       ].join('\n')
     })
   // link opens the Orders page (Leopards column shows the money of each order)
@@ -77,7 +79,7 @@ export async function samplePaymentChanges(): Promise<PaymentChange[]> {
         customer: r.customerName,
         payout: r.courierPayout || 0,
         cod: r.courierCod || 0,
-        charges: r.courierCharges || 0,
+        charges: Math.round(((r.courierCharges || 0) + (((r.courierMoney as any) || {}).whtAmount || 0)) * 100) / 100,
         payment: r.courierPayment as string,
         invoiceNo: m.invoiceNo || null,
         invoiceDate: m.invoiceDate || null,

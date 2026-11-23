@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 // A person's "In hand" statement: opening balance, every amount in / out with the running balance,
 // and the closing balance (= the In hand number on their card).
 
-type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment'
+type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment' | 'courier'
 interface Entry {
   id: string
   date: string
@@ -38,6 +38,7 @@ const KIND: Record<Kind, { label: string; icon: React.ElementType; tone: string 
   opening: { label: 'Opening balance', icon: Flag, tone: 'bg-violet-100 text-violet-700' },
   investment: { label: 'Investment', icon: PiggyBank, tone: 'bg-emerald-100 text-emerald-800' },
   adjustment: { label: 'Adjustment', icon: SlidersHorizontal, tone: 'bg-amber-100 text-amber-800' },
+  courier: { label: 'Leopards invoice', icon: Truck, tone: 'bg-yellow-100 text-yellow-800' },
 }
 
 const rs = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`

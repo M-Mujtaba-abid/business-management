@@ -13,12 +13,15 @@
 //  + investment             MoneyEntry INVESTMENT (own money put in; also the person's capital)
 //  ± adjustment             MoneyEntry ADJUSTMENT (a correction with a reason)
 //  − capital taken back     Withdrawal type CAPITAL (shown apart from profit withdrawals)
+//  ± Leopards invoice       LeopardsInvoice received: invoice amount − money of the orders it paid
+//                           (= charges Leopards took here for orders paid in another invoice, or
+//                           returned ones), so In hand always equals what reached the bank
 import type { Prisma } from '@prisma/client'
 import { payoutAmount } from '@/lib/saleMoney'
 
 type Db = Prisma.TransactionClient
 
-export type LedgerKind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment'
+export type LedgerKind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment' | 'courier'
 
 export interface LedgerEntry {
   id: string // stable key (e.g. "order:#1194", "exp:<id>")
@@ -47,7 +50,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 // All entries, grouped by person (only people that exist). personId limits it to one person.
 export async function buildLedger(db: Db, personId?: string): Promise<Map<string, LedgerEntry[]>> {
   const only = (field: string) => (personId ? { [field]: personId } : { [field]: { not: null } })
-  const [people, received, expenses, withdrawals, dcPaid, stockPaid, moneyEntries] = await Promise.all([
+  const [people, received, expenses, withdrawals, dcPaid, stockPaid, moneyEntries, invoices] = await Promise.all([
     db.person.findMany({ where: personId ? { id: personId } : {}, select: { id: true } }),
     db.sale.findMany({
       where: { paymentStatus: 'RECEIVED', ...only('receivedById') },
@@ -85,7 +88,26 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       },
     }),
     db.moneyEntry.findMany({ where: personId ? { personId } : {}, select: { id: true, personId: true, kind: true, amount: true, date: true, note: true, createdBy: true } }),
+    db.leopardsInvoice.findMany({
+      where: { receivedAt: { not: null }, ...only('receivedById') },
+      select: { invoiceNo: true, amount: true, receivedAt: true, receivedById: true },
+    }),
   ])
+
+  // Orders each received invoice paid (whoever they went to)
+  const paidByInvoice = new Map<string, { payout: number; orders: Set<string> }>()
+  if (invoices.length) {
+    const paidRows = await db.sale.findMany({
+      where: { courierInvoiceNo: { in: invoices.map((i) => i.invoiceNo) }, paymentStatus: 'RECEIVED' },
+      select: { courierInvoiceNo: true, orderNo: true, soldPrice: true, quantity: true, receivedAmount: true },
+    })
+    for (const s of paidRows) {
+      const e = paidByInvoice.get(s.courierInvoiceNo as string) || { payout: 0, orders: new Set<string>() }
+      e.payout += payoutAmount(s)
+      if (s.orderNo != null) e.orders.add(`#${s.orderNo}`)
+      paidByInvoice.set(s.courierInvoiceNo as string, e)
+    }
+  }
 
   const map = new Map<string, LedgerEntry[]>(people.map((p) => [p.id, []]))
   const push = (e: LedgerEntry) => map.get(e.personId)?.push(e)
@@ -177,6 +199,24 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       title: `Delivery charge${lead.orderNo != null ? ` · order #${lead.orderNo}` : ''}`,
       detail: `${lead.customerName}${lead.city && lead.city !== 'General' ? `, ${lead.city}` : ''}`,
       orderNo: lead.orderNo,
+    })
+  }
+
+  // ± Leopards invoice: the part of the invoice that is not the money of the orders it paid
+  for (const inv of invoices) {
+    const paid = paidByInvoice.get(inv.invoiceNo) || { payout: 0, orders: new Set<string>() }
+    const amount = r2(inv.amount - paid.payout)
+    if (Math.abs(amount) < 0.5) continue
+    push({
+      id: `lcs:${inv.invoiceNo}`,
+      personId: inv.receivedById as string,
+      date: inv.receivedAt as Date,
+      kind: 'courier',
+      amount,
+      title: `Leopards invoice ${inv.invoiceNo}`,
+      detail:
+        `Invoice ${rs(inv.amount)} − orders paid in it ${rs(paid.payout)}${paid.orders.size ? ` (${Array.from(paid.orders).join(', ')})` : ''}` +
+        (amount < 0 ? ' · Leopards also took the charges of orders paid in another invoice / returned' : ' · charges of these orders were taken in an earlier invoice'),
     })
   }
 

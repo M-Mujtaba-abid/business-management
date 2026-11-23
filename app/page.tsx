@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, MutableRefObject } from 'react'
 import AppShell from '@/components/ui/AppShell'
 import { NavSection, NAV_SECTIONS } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
@@ -17,6 +17,7 @@ import InventoryMoneyTab from '@/components/InventoryMoneyTab'
 import CapitalTab from '@/components/CapitalTab'
 import SupplierPaymentsTab from '@/components/SupplierPaymentsTab'
 import ReceivablesTab from '@/components/ReceivablesTab'
+import LeopardsPaymentsTab from '@/components/LeopardsPaymentsTab'
 import PeopleMoneyTab from '@/components/PeopleMoneyTab'
 import ExpenseWizard from '@/components/ui/ExpenseWizard'
 import MarkReturnedModal from '@/components/MarkReturnedModal'
@@ -93,14 +94,10 @@ export default function Home() {
   const [isNewDispatchOpen, setIsNewDispatchOpen] = useState(false)
   const [, setIsRestockOpen] = useState(false) // OLD INVENTORY FLOW: was [isRestockOpen, setIsRestockOpen]
   const [isExpenseOpen, setIsExpenseOpen] = useState(false)
-  const [selectedDrawerSale, setSelectedDrawerSale] = useState<Sale | null>(null)
-  // The open order's products, read from the latest list so the drawer never shows stale data
-  const drawerItems = useMemo(() => {
-    if (!selectedDrawerSale) return []
-    const parcelId = selectedDrawerSale.parcelId
-    const fresh = parcelId ? sales.filter((s) => s.parcelId === parcelId) : sales.filter((s) => s.id === selectedDrawerSale.id)
-    return fresh.length ? fresh : [selectedDrawerSale]
-  }, [selectedDrawerSale, sales])
+  // The open order lives in OrderDrawerHost: opening it then re-renders only the drawer, not the whole
+  // page (re-rendering every order row made the drawer slow to open, so a 2nd click closed it again)
+  const drawerRef = useRef<((sale: Sale | null) => void) | null>(null)
+  const setSelectedDrawerSale = useCallback((sale: Sale | null) => drawerRef.current?.(sale), [])
   const [returnModalSale, setReturnModalSale] = useState<Sale | null>(null)
   const [receiveModal, setReceiveModal] = useState<{ sale: Sale; mode: 'receive' | 'edit' } | null>(null)
   // Products of the order being edited (null = form is for a new order)
@@ -482,6 +479,7 @@ export default function Home() {
               setActiveSection('orders')
             }}
           />
+          <LeopardsPaymentsTab onChanged={refreshAll} />
           <SupplierPaymentsTab
             onChanged={refreshAll}
             onViewOrders={(supplierId) => {
@@ -512,10 +510,9 @@ export default function Home() {
       )}
 
       {/* Slide-over Order Details Drawer */}
-      <OrderDetailsDrawer
-        items={drawerItems}
-        isOpen={Boolean(selectedDrawerSale)}
-        onClose={() => setSelectedDrawerSale(null)}
+      <OrderDrawerHost
+        register={drawerRef}
+        sales={sales}
         onDeleteSale={handleDeleteSale}
         onEditOrder={(items) => setEditOrderItems(items)}
         onSaved={refreshAll}
@@ -582,5 +579,40 @@ export default function Home() {
       />
 
     </AppShell>
+  )
+}
+
+// Holds which order is open in the drawer (see drawerRef in Home)
+function OrderDrawerHost({
+  register,
+  sales,
+  onDeleteSale,
+  onEditOrder,
+  onSaved,
+}: {
+  register: MutableRefObject<((sale: Sale | null) => void) | null>
+  sales: Sale[]
+  onDeleteSale: (id: string) => void
+  onEditOrder: (items: Sale[]) => void
+  onSaved: () => void
+}) {
+  const [selected, setSelected] = useState<Sale | null>(null)
+  register.current = setSelected
+  // The open order's products, read from the latest list so the drawer never shows stale data
+  const items = useMemo(() => {
+    if (!selected) return []
+    const parcelId = selected.parcelId
+    const fresh = parcelId ? sales.filter((s) => s.parcelId === parcelId) : sales.filter((s) => s.id === selected.id)
+    return fresh.length ? fresh : [selected]
+  }, [selected, sales])
+  return (
+    <OrderDetailsDrawer
+      items={items}
+      isOpen={Boolean(selected)}
+      onClose={() => setSelected(null)}
+      onDeleteSale={onDeleteSale}
+      onEditOrder={onEditOrder}
+      onSaved={onSaved}
+    />
   )
 }

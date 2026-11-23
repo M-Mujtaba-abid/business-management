@@ -20,11 +20,17 @@ export interface CourierMoney {
   gstAmount: number
   netCharges: number
   grossCharges: number
+  extraCharges?: number // more cut in the invoice than the API shows (fuel etc.)
+  totalCharges?: number
+  whtPercent?: number
+  whtAmount?: number // tax on the COD
   payout: number
   payment: string
   paymentWord: string | null
   invoiceNo: string | null
   invoiceDate: string | null
+  chargeInvoiceNo?: string | null
+  invoiceReceived?: boolean
   paymentMethod: string | null
   message: string | null
   weightGrams: number | null
@@ -35,7 +41,7 @@ const rs = (n: number) => `Rs. ${n.toLocaleString('en-PK', { maximumFractionDigi
 export function paymentChip(payment?: string | null) {
   switch (payment) {
     case 'PAID':
-      return { label: 'Paid', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+      return { label: 'Money received', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
     case 'PENDING':
       return { label: 'Invoiced, not paid', tone: 'bg-amber-50 text-amber-700 border-amber-200' }
     case 'NOT_INVOICED':
@@ -100,7 +106,10 @@ function LeopardsMoneyDialog({ money, payment, checkedAt, orderNo, orderTotal, o
     ['Return charges', money.returnCharges],
     ['Other charges', money.otherCharges],
     [`GST${money.gstPercent ? ` (${money.gstPercent}%)` : ''}`, money.gstAmount],
+    ['Extra cut in Leopards invoice (fuel etc.)', money.extraCharges || 0],
   ]
+  const totalCharges = money.totalCharges ?? money.grossCharges
+  const tax = money.whtAmount || 0
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/40 p-0 sm:p-4" onClick={onClose}>
@@ -134,9 +143,17 @@ function LeopardsMoneyDialog({ money, payment, checkedAt, orderNo, orderTotal, o
                   </tr>
                 ))}
               <tr className="bg-slate-50">
-                <td className="py-2 pl-2 font-semibold text-slate-700">Total charges</td>
-                <td className="py-2 pr-2 text-right font-mono font-semibold text-rose-700">− {rs(money.grossCharges)}</td>
+                <td className="py-2 pl-2 font-semibold text-slate-700">Total Leopards charges</td>
+                <td className="py-2 pr-2 text-right font-mono font-semibold text-rose-700">− {rs(totalCharges)}</td>
               </tr>
+              {tax > 0 && (
+                <tr>
+                  <td className="py-2 text-slate-600">
+                    Tax on COD ({money.whtPercent}%: income tax + sales tax)
+                  </td>
+                  <td className="py-2 text-right font-mono text-rose-600">− {rs(tax)}</td>
+                </tr>
+              )}
               <tr className="bg-emerald-50">
                 <td className="py-2.5 pl-2 font-bold text-emerald-800">Money that comes to you</td>
                 <td className="py-2.5 pr-2 text-right font-mono text-base font-black text-emerald-800">{rs(money.payout)}</td>
@@ -162,8 +179,14 @@ function LeopardsMoneyDialog({ money, payment, checkedAt, orderNo, orderTotal, o
             </div>
             {money.invoiceNo && (
               <div className="flex justify-between text-slate-600">
-                <span>Invoice</span>
+                <span>Invoice (COD paid)</span>
                 <span className="font-mono">{money.invoiceNo}</span>
+              </div>
+            )}
+            {money.chargeInvoiceNo && money.chargeInvoiceNo !== money.invoiceNo && (
+              <div className="flex justify-between text-slate-600">
+                <span>Charges taken in</span>
+                <span className="font-mono">{money.chargeInvoiceNo}</span>
               </div>
             )}
             {money.invoiceDate && (
@@ -181,8 +204,8 @@ function LeopardsMoneyDialog({ money, payment, checkedAt, orderNo, orderTotal, o
             {money.message && <p className="text-slate-500">{money.message}</p>}
             <p className="pt-1 text-[11px] text-slate-400">
               {payment === 'PAID'
-                ? 'Leopards has paid this order, so it is marked Received with this amount.'
-                : 'The order stays "Not received" until Leopards marks it Paid.'}
+                ? 'The invoice money has reached you, so this order is marked Received with this amount.'
+                : 'When the invoice money reaches the bank, press "Money received" on it in Payments → Leopards payments.'}
             </p>
           </div>
 

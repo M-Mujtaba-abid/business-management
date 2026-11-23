@@ -42,6 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       opening: { count: 0, amount: 0 },
       investment: { count: 0, amount: 0 },
       adjustment: { count: 0, amount: 0 },
+      courier: { count: 0, amount: 0 },
     }
     for (const e of inRange) {
       byKind[e.kind].count++

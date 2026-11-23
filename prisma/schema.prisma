@@ -170,6 +170,30 @@ model Person {
   stockPayments StockPayment[]
   bankChecks  BankCheck[]
   moneyEntries MoneyEntry[]
+  leopardsInvoices LeopardsInvoice[]
+}
+
+// One Leopards payment (invoice / cheque), from Leopards' getInvoices. Its amount is exactly what
+// reaches the bank. Leopards takes a parcel's charges in one invoice (often before delivery) and pays
+// its COD (minus tax) in a later one, so an invoice = COD − tax of some orders − charges of others.
+// receivedAt: when the money reached us — set with "Money received" in the app, or automatically when
+// Leopards says it is paid. Its orders are then marked Received (lib/leopardsMoney.ts).
+model LeopardsInvoice {
+  invoiceNo      String    @id
+  invoiceDate    DateTime?
+  amount         Float
+  bankName       String?
+  method         String?   // e.g. IBFT
+  leopardsStatus String?   // Leopards' own word, e.g. "processing"
+  receivedAt     DateTime?
+  receivedById   String?
+  markedBy       String?   // who clicked "Money received" (null = Leopards said paid)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  receivedBy     Person?   @relation(fields: [receivedById], references: [id], onDelete: SetNull)
+
+  @@index([receivedById])
 }
 
 // Bank check (reconciliation): the real balance in the person's business bank account on a date,
@@ -371,6 +395,11 @@ model Sale {
   courierPayment         String?
   courierMoney           Json?
   courierMoneyAt         DateTime?
+  // Leopards invoice that pays this order's COD (null = not paid in an invoice yet)
+  courierInvoiceNo       String?
+  // true = receivedAmount / return loss are kept in step with Leopards automatically
+  // (COD − tax − charges); false once someone types the amount by hand
+  courierMoneyAuto       Boolean     @default(false)
   // Booked with Leopards from the app (Book Leopards button): label link (kept on the server; it can
   // carry account details, so the browser gets it through /api/sales/[id]/leopards/slip) and when
   courierSlipUrl         String?
@@ -412,6 +441,7 @@ model Sale {
   @@index([orderNo])
   @@index([externalOrderId])
   @@index([trackingNumber])
+  @@index([courierInvoiceNo])
   @@index([customerResponse])
 }
 

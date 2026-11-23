@@ -92,6 +92,8 @@ export async function changeParcelStatus(sales: Sale[], change: StatusChange): P
             profit,
             returnLoss: savedReturnLoss,
             deductDeliveryOnReturn: shouldDeductLoss,
+            // A return loss typed by hand is kept; the Leopards check fills it only when it is 0
+            ...(targetStatus === 'RETURNED' && lossShares && lossNum > 0 ? { courierMoneyAuto: false } : {}),
             // Marked Returned from the courier status: the parcel is still on its way back
             ...(targetStatus === 'RETURNED' && prevStatus !== 'RETURNED'
               ? { returnedAt: new Date(), returnReceived: false, returnReceivedAt: null }

@@ -52,9 +52,10 @@ export async function PATCH(
     const updated = await withBalanceGuard(async (tx) => {
       const rows = []
       for (const [i, s] of sales.entries()) {
-        const data: { receivedAmount?: number | null; paymentStatus?: 'RECEIVED' | 'NOT_RECEIVED'; paymentReceivedAt?: Date | null; profit?: number } = {}
+        const data: { receivedAmount?: number | null; paymentStatus?: 'RECEIVED' | 'NOT_RECEIVED'; paymentReceivedAt?: Date | null; profit?: number; courierMoneyAuto?: boolean } = {}
         if (payouts) {
           data.receivedAmount = payouts[i]
+          data.courierMoneyAuto = false // typed by hand: the Leopards check no longer changes it
           if (s.status === 'DELIVERED') data.profit = deliveredProfit({ ...s, receivedAmount: payouts[i] })
         }
         if (body.status !== undefined) {

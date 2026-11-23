@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   X, MapPin, Package, Trash2, Camera, CheckCircle2, RotateCcw, XCircle, Wallet, Banknote, Pencil, Truck, Hash, Save, Recycle, Star,
 } from 'lucide-react'
@@ -68,6 +68,11 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
   const [savedPhotos, setSavedPhotos] = useState<OrderPhoto[]>([])
   const [photos, setPhotos] = useState<OrderPhoto[]>([])
   const [photosUploading, setPhotosUploading] = useState(false)
+  // A quick 2nd click (double-click, or a click while it was still opening) must not close it again
+  const openedAt = useRef(0)
+  useEffect(() => {
+    if (isOpen) openedAt.current = Date.now()
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -225,7 +230,7 @@ export default function OrderDetailsDrawer({ items, isOpen, onClose, onDeleteSal
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/30 backdrop-blur-sm animate-in fade-in">
-      <div className="absolute inset-0" onClick={handleClose} />
+      <div className="absolute inset-0" onClick={() => Date.now() - openedAt.current > 500 && handleClose()} />
 
       <aside className="absolute inset-y-0 right-0 w-full sm:w-[640px] lg:w-[720px] max-w-full flex">
         <div className="w-full bg-slate-50 sm:border-l border-slate-200 text-slate-900 shadow-2xl flex flex-col">

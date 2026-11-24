@@ -465,6 +465,20 @@ export default function Home() {
         <div key={refreshKey} className="space-y-6">
           <PeopleMoneyTab
             onChanged={refreshAll}
+            onOpenOrder={async (orderNo) => {
+              // show this order in the Orders list and open its side drawer
+              setOrderFilters({ ...EMPTY_ORDER_FILTERS })
+              setStatusFilter('ALL')
+              setDateRange('all')
+              setSearchQuery(String(orderNo))
+              setActiveSection('orders')
+              try {
+                const r = await fetch(`/api/sales?range=all&status=ALL&search=${orderNo}`)
+                const rows: Sale[] = r.ok ? await r.json() : []
+                const sale = rows.find((s) => s.orderNo === orderNo)
+                if (sale) setSelectedDrawerSale(sale)
+              } catch {}
+            }}
             onViewOrders={(receivedById) => {
               setOrderFilters({ ...EMPTY_ORDER_FILTERS, receivedById })
               setStatusFilter('ALL')

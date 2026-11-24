@@ -8,6 +8,7 @@ import { cleanRef, nextOrderNo, findDuplicateRef, parseOrderDate, missingRequire
 import { notifyOrder, kindForStatus, whatsappByOrder } from '@/lib/whatsapp'
 import { logOrder, requestActor, nameMaps, orderRef, rs, STATUS_WORDS } from '@/lib/orderLog'
 import { holdStock, inventoryErrorResponse } from '@/lib/inventory'
+import { resolveSupplierPayer } from '@/lib/supplierPayer'
 
 export const dynamic = 'force-dynamic'
 
@@ -218,6 +219,7 @@ export async function POST(request: NextRequest) {
     }
 
     const actor = await requestActor(request)
+    const supplierPayer = await resolveSupplierPayer(body.supplierPaidById)
     const created = await prisma.$transaction(async (tx) => {
       // One number for the whole order / parcel
       const orderNo = await nextOrderNo(tx)
@@ -272,6 +274,8 @@ export async function POST(request: NextRequest) {
             inventoryItemId: it.inventoryItemId,
             supplierPaymentStatus: supplierStatus,
             supplierPaidAt: supplierStatus === 'PAID' ? new Date() : null,
+            // the supplier was paid when the order was saved: by the default payer (Mujtaba) unless chosen
+            supplierPaidById: supplierStatus === 'PAID' ? supplierPayer : null,
             paymentSourceId: paymentSourceId || null,
             orderSourceId: orderSourceId || null,
             receivedAmount,

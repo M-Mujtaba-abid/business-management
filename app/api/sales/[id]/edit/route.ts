@@ -8,6 +8,7 @@ import { destroyPhoto } from '@/lib/cloudinary'
 import type { Sale } from '@prisma/client'
 import { logOrder, nameMaps, orderRef, requestActor, rs } from '@/lib/orderLog'
 import { InventoryError, holdStock, inventoryErrorResponse, itemCost, releaseStock } from '@/lib/inventory'
+import { resolveSupplierPayer } from '@/lib/supplierPayer'
 
 // Sentinel: the form did not send a photo list, so photos stay as they are
 const NO_PHOTO_CHANGE: { images: never[] } = { images: [] }
@@ -269,6 +270,7 @@ export async function PUT(
 
     // Changing "Received by", DC person or amounts cannot leave anyone below zero
     const actor = await requestActor(request)
+    const supplierPayer = await resolveSupplierPayer(body.supplierPaidById)
     // A cancelled order holds no stock; every other order takes it when saved
     const holdsStock = lead.status !== 'CANCELLED'
     const saved = await withBalanceGuard(async (tx) => {
@@ -321,6 +323,9 @@ export async function PUT(
         const supplierStatus = it.returnedItemId || it.inventoryItemId ? 'NOT_APPLICABLE' : it.supplierPaid ? 'PAID' : 'PENDING'
         const supplierPaidAt =
           supplierStatus === 'PAID' ? (prev?.supplierPaymentStatus === 'PAID' ? prev.supplierPaidAt : new Date()) : null
+        // already paid: keep who paid; newly paid here: the default payer (Mujtaba) unless chosen
+        const supplierPaidById =
+          supplierStatus === 'PAID' ? (prev?.supplierPaymentStatus === 'PAID' ? prev.supplierPaidById : supplierPayer) : null
         const payout = payoutShares ? payoutShares[i] : null
         const receivedAmount = payout !== null && Math.abs(payout - it.soldPrice * it.quantity) >= 0.005 ? payout : null
 
@@ -336,6 +341,7 @@ export async function PUT(
           inventoryItemId: it.inventoryItemId,
           supplierPaymentStatus: supplierStatus as 'PAID' | 'PENDING' | 'NOT_APPLICABLE',
           supplierPaidAt,
+          supplierPaidById,
           deliveryCharge: dcShares[i],
           // old orders may have no DC person; it stays optional on edit
           dcPaidById: deliveryTotal > 0 ? body.dcPaidById || null : null,

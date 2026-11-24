@@ -2,13 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Loader2, Download, ShoppingBag, Receipt, ArrowDownToLine, Truck, Boxes, Flag, PiggyBank, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { X, Loader2, Download, ShoppingBag, Receipt, ArrowDownToLine, Truck, Boxes, Flag, PiggyBank, SlidersHorizontal, Trash2, Wallet, Send } from 'lucide-react'
 import { toast } from 'sonner'
 
 // A person's "In hand" statement: opening balance, every amount in / out with the running balance,
 // and the closing balance (= the In hand number on their card).
 
-type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment' | 'courier'
+type Kind = 'order' | 'expense' | 'withdrawal' | 'dc' | 'stock' | 'opening' | 'investment' | 'adjustment' | 'courier' | 'supplier' | 'transfer'
 interface Entry {
   id: string
   date: string
@@ -39,6 +39,8 @@ const KIND: Record<Kind, { label: string; icon: React.ElementType; tone: string 
   investment: { label: 'Investment', icon: PiggyBank, tone: 'bg-emerald-100 text-emerald-800' },
   adjustment: { label: 'Adjustment', icon: SlidersHorizontal, tone: 'bg-amber-100 text-amber-800' },
   courier: { label: 'Leopards invoice', icon: Truck, tone: 'bg-yellow-100 text-yellow-800' },
+  supplier: { label: 'Supplier paid', icon: Wallet, tone: 'bg-orange-100 text-orange-800' },
+  transfer: { label: 'Sent / received', icon: Send, tone: 'bg-sky-100 text-sky-800' },
 }
 
 const rs = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`
@@ -93,7 +95,7 @@ export default function PersonStatement({
   // Remove a wrong opening balance / investment / adjustment
   const deleteEntry = async (e: Entry) => {
     if (!confirm(`Delete "${e.title}" ${e.amount >= 0 ? '+' : '−'}${rs(Math.abs(e.amount))}?`)) return
-    const res = await fetch(`/api/money-entries/${e.refId}`, { method: 'DELETE' })
+    const res = await fetch(e.kind === 'transfer' ? `/api/transfers/${e.refId}` : `/api/money-entries/${e.refId}`, { method: 'DELETE' })
     const d = await res.json().catch(() => ({}))
     if (!res.ok) return toast.error(d.error || 'Could not delete')
     toast.success('Deleted')
@@ -259,7 +261,7 @@ export default function PersonStatement({
                               <div className="min-w-0">
                                 <div className="font-semibold text-slate-800">{e.title}</div>
                                 {e.detail && <div className="text-[11px] text-slate-500">{e.detail}</div>}
-                                {(e.kind === 'opening' || e.kind === 'investment' || e.kind === 'adjustment') && e.refId && (
+                                {(e.kind === 'opening' || e.kind === 'investment' || e.kind === 'adjustment' || e.kind === 'transfer') && e.refId && (
                                   <button
                                     onClick={() => deleteEntry(e)}
                                     className="mt-0.5 inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 hover:text-rose-600"

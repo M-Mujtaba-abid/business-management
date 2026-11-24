@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { withBalanceGuard, balanceErrorResponse } from '@/lib/balanceGuard'
 import { capitalByPerson } from '@/lib/capital'
+import { buildLedger, splitInHand } from '@/lib/personLedger'
 
 class CapitalError extends Error {}
 
@@ -53,8 +54,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Enter a valid amount' }, { status: 400 })
     }
 
-    // Cannot take out more than the person holds; capital back cannot be more than they put in
+    // Cannot take out more than the person holds; capital back cannot be more than they put in;
+    // supplier money (cover cost still to pay) cannot be withdrawn — only own money
     const withdrawal = await withBalanceGuard(async (tx) => {
+      const split = splitInHand((await buildLedger(tx, personId)).get(personId) || [])
+      if (amt > split.own + 0.5) {
+        throw new CapitalError(
+          `Only Rs. ${Math.round(Math.max(0, split.own)).toLocaleString('en-PK')} of the Rs. ${Math.round(split.inHand).toLocaleString('en-PK')} in hand is own money` +
+            (split.supplier > 0 ? `; Rs. ${Math.round(split.supplier).toLocaleString('en-PK')} is supplier money (still to pay to suppliers)` : '') +
+            '. Cannot withdraw more than the own money.'
+        )
+      }
       if (kind === 'CAPITAL') {
         const cap = (await capitalByPerson(tx)).find((c) => c.id === personId)
         if (!cap || amt > cap.net + 0.5) {

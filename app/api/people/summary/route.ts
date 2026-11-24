@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { countOrders } from '@/lib/saleMoney'
-import { buildLedger, orderNet, sumLedger } from '@/lib/personLedger'
+import { buildLedger, orderNet, sumLedger, splitInHand, type LedgerEntry } from '@/lib/personLedger'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,6 +65,21 @@ export async function GET(request: NextRequest) {
     const net = orderNet
     const sum = (list: number[]) => list.reduce((acc, n) => acc + n, 0)
 
+    const periodMoves = (entries: LedgerEntry[]) => {
+      const inP = entries.filter((e) => inRange(e.date))
+      const supplierPaid = inP.filter((e) => e.kind === 'supplier')
+      const sent = inP.filter((e) => e.kind === 'transfer' && e.amount < 0)
+      const got = inP.filter((e) => e.kind === 'transfer' && e.amount > 0)
+      return {
+        supplierPaidAmount: -sum(supplierPaid.map((e) => e.amount)),
+        supplierPaidCount: supplierPaid.length,
+        sentAmount: -sum(sent.map((e) => e.amount)),
+        sentCount: sent.length,
+        transferInAmount: sum(got.map((e) => e.amount)),
+        transferInCount: got.length,
+      }
+    }
+
     const build = (id: string | null, name: string) => {
       const got = received.filter((s) => s.receivedById === id)
       const gotInPeriod = got.filter((s) => inRange(s.paymentReceivedAt))
@@ -96,6 +111,10 @@ export async function GET(request: NextRequest) {
         investedAmount: sum(savings.map((p) => p.amount)), // all time, from personal savings
         // All time, from the person's money statement (same entries as the Statement window)
         inHand: id ? sumLedger(ledger.get(id) || []) : sum(got.map(net)),
+        // of which: supplier money (cover cost still to pay) and own money (free to use / withdraw)
+        ...(id ? (({ supplier, own }) => ({ supplierMoney: supplier, ownMoney: own }))(splitInHand(ledger.get(id) || [])) : {}),
+        // in the period: supplier payments made, and money sent to / received from the other person
+        ...(id ? periodMoves(ledger.get(id) || []) : {}),
         lastBankCheck: id ? lastCheckOf.get(id) ?? null : null,
         expectedAmount: sum(coming.map(net)),
         expectedCount: countOrders(coming),

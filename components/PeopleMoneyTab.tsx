@@ -1,10 +1,12 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History, ChevronDown, Truck, ScrollText, Landmark } from 'lucide-react'
+import { Users, ArrowUpRight, Calendar, ArrowDownToLine, X, Trash2, History, ChevronDown, Truck, ScrollText, Landmark, Send } from 'lucide-react'
 import PersonStatement from './PersonStatement'
 import BankCheckDialog, { BankCheckBadge, BankCheckRow } from './BankCheck'
 import AddMoneyDialog from './AddMoney'
+import SendMoneyDialog from './SendMoney'
+import MoneySplitDialog from './MoneySplit'
 import { toast } from 'sonner'
 import { formatDateTime } from '@/lib/format'
 
@@ -23,6 +25,14 @@ interface PersonSummary {
   stockCount?: number
   investedAmount?: number // put in from personal savings (all time)
   lastBankCheck?: BankCheckRow | null // latest bank check (reconciliation)
+  supplierMoney?: number // part of In hand that is supplier money (cover cost still to pay)
+  ownMoney?: number // part of In hand free to use / withdraw
+  supplierPaidAmount?: number // period: suppliers paid by this person
+  supplierPaidCount?: number
+  sentAmount?: number // period: money sent to the other person
+  sentCount?: number
+  transferInAmount?: number // period: money received from the other person
+  transferInCount?: number
   inHand: number
   expectedAmount: number
   expectedCount: number
@@ -51,6 +61,7 @@ interface DcEntry {
 interface PeopleMoneyTabProps {
   onViewOrders: (receivedById: string) => void // person id, or 'none'
   onChanged?: () => void
+  onOpenOrder?: (orderNo: number) => void // open one order in the Orders page with its side drawer
 }
 
 type Period = 'week' | 'month' | 'last-month' | 'all' | 'custom'
@@ -81,7 +92,7 @@ const periodRange = (period: Period): { from: string; to: string } => {
 const formatPKR = (n: number) => `Rs. ${Math.round(n).toLocaleString()}`
 
 // How much business money each person holds: received order money minus expenses they paid and withdrawals
-export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyTabProps) {
+export default function PeopleMoneyTab({ onViewOrders, onChanged, onOpenOrder }: PeopleMoneyTabProps) {
   const [period, setPeriod] = useState<Period>('month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -95,6 +106,8 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
   const [wReason, setWReason] = useState('')
   const [wType, setWType] = useState<'PROFIT' | 'CAPITAL'>('PROFIT')
   const [addMoneyFor, setAddMoneyFor] = useState<{ id: string; name: string } | null>(null)
+  const [sendFor, setSendFor] = useState<{ id: string; name: string; inHand: number } | null>(null)
+  const [splitFor, setSplitFor] = useState<{ id: string; name: string; mode: 'supplier' | 'own' } | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   const [statementFor, setStatementFor] = useState<{ id: string; name: string } | null>(null)
@@ -157,8 +170,9 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
     }
     // Quick check here; the server checks again before saving
     const person = summary.find((s) => s.id === withdrawFor)
-    if (person && amt > person.inHand + 0.5) {
-      toast.error(`${person.name} has only ${formatPKR(Math.max(0, person.inHand))} in hand. Cannot withdraw more than that.`)
+    const own = person ? person.ownMoney ?? person.inHand : 0
+    if (person && amt > own + 0.5) {
+      toast.error(`${person.name} has only ${formatPKR(Math.max(0, own))} of own money (the rest is supplier money). Cannot withdraw more than that.`)
       return
     }
     setIsSaving(true)
@@ -268,12 +282,36 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-bold text-slate-900">{p.name}</h3>
                     <div className="text-right">
-                      <div className="text-[11px] text-slate-500">In hand now</div>
+                      <div className="text-[11px] text-slate-500">In hand now (= bank)</div>
                       <div className={`text-xl font-black font-mono ${p.inHand >= 0 ? 'text-violet-700' : 'text-rose-600'}`}>
                         {formatPKR(p.inHand)}
                       </div>
                     </div>
                   </div>
+
+                  {/* In hand split: supplier money (still to pay to suppliers) vs own money (free to use) */}
+                  {p.id && p.supplierMoney !== undefined && (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setSplitFor({ id: p.id as string, name: p.name, mode: 'supplier' })}
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-left hover:border-amber-400 hover:bg-amber-100"
+                        title="Click to see which orders this supplier money is for"
+                      >
+                        <div className="text-[10px] text-amber-700">Supplier money ›</div>
+                        <div className="font-mono font-bold text-amber-800">{formatPKR(p.supplierMoney)}</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSplitFor({ id: p.id as string, name: p.name, mode: 'own' })}
+                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-left hover:border-emerald-400 hover:bg-emerald-100"
+                        title="Click to see what made up the own money"
+                      >
+                        <div className="text-[10px] text-emerald-700">Own money ›</div>
+                        <div className="font-mono font-bold text-emerald-800">{formatPKR(p.ownMoney ?? 0)}</div>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Period breakdown */}
                   <div className="rounded-lg bg-white border border-violet-100 p-2.5 space-y-1 text-xs">
@@ -308,6 +346,24 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                       <div className="flex justify-between" title="Inventory stock bought from this person's money in hand">
                         <span className="text-slate-600">Stock bought ({p.stockCount})</span>
                         <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.stockAmount ?? 0)}</span>
+                      </div>
+                    )}
+                    {p.id && (p.supplierPaidCount ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Suppliers paid ({p.supplierPaidCount})</span>
+                        <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.supplierPaidAmount ?? 0)}</span>
+                      </div>
+                    )}
+                    {p.id && (p.sentCount ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Sent to others ({p.sentCount})</span>
+                        <span className="font-mono font-semibold text-rose-600">− {formatPKR(p.sentAmount ?? 0)}</span>
+                      </div>
+                    )}
+                    {p.id && (p.transferInCount ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Received from others ({p.transferInCount})</span>
+                        <span className="font-mono font-semibold text-emerald-600">+ {formatPKR(p.transferInAmount ?? 0)}</span>
                       </div>
                     )}
                   </div>
@@ -374,7 +430,8 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-rose-500"
                       />
                       <div className="text-[11px] text-slate-500">
-                        Max you can withdraw: <span className="font-mono font-semibold text-slate-700">{formatPKR(Math.max(0, p.inHand))}</span>
+                        Max you can withdraw (own money):{' '}
+                        <span className="font-mono font-semibold text-slate-700">{formatPKR(Math.max(0, p.ownMoney ?? p.inHand))}</span>
                       </div>
                       {/* Profit = business money for yourself · Capital = your own invested money back */}
                       <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 p-0.5">
@@ -489,6 +546,13 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
                         </button>
                       </div>
                       <button
+                        onClick={() => setSendFor({ id: p.id as string, name: p.name, inHand: p.inHand })}
+                        className="w-full px-2 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold flex items-center justify-center gap-1"
+                        title="Record a bank transfer to the other person (e.g. Meezan → Mashreq)"
+                      >
+                        <Send className="h-3.5 w-3.5" /> Send money to {summary.filter((x) => x.id && x.id !== p.id).map((x) => x.name).join(' / ') || 'someone'}
+                      </button>
+                      <button
                         onClick={() => setAddMoneyFor({ id: p.id as string, name: p.name })}
                         className="w-full px-2 py-1.5 rounded-lg border border-dashed border-violet-300 text-violet-700 hover:bg-violet-50 text-[11px] font-semibold flex items-center justify-center gap-1"
                         title="Opening balance, investment (own money in) or an adjustment"
@@ -518,6 +582,30 @@ export default function PeopleMoneyTab({ onViewOrders, onChanged }: PeopleMoneyT
       )}
       {bankCheckFor && (
         <BankCheckDialog personId={bankCheckFor.id} name={bankCheckFor.name} onClose={() => setBankCheckFor(null)} onSaved={fetchAll} />
+      )}
+      {splitFor && <MoneySplitDialog personId={splitFor.id} name={splitFor.name} mode={splitFor.mode}
+          onClose={() => setSplitFor(null)}
+          onOpenOrder={
+            onOpenOrder
+              ? (no) => {
+                  setSplitFor(null)
+                  onOpenOrder(no)
+                }
+              : undefined
+          }
+        />}
+      {sendFor && (
+        <SendMoneyDialog
+          from={sendFor}
+          inHand={sendFor.inHand}
+          people={summary.filter((x) => x.id).map((x) => ({ id: x.id as string, name: x.name }))}
+          onClose={() => setSendFor(null)}
+          onSaved={() => {
+            setSendFor(null)
+            fetchAll()
+            onChanged?.()
+          }}
+        />
       )}
       {addMoneyFor && (
         <AddMoneyDialog

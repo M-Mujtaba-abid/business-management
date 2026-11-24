@@ -164,6 +164,9 @@ model Person {
 
   sales       Sale[]       @relation("ReceivedBy")
   dcSales     Sale[]       @relation("DcPaidBy")
+  supplierPaidSales Sale[] @relation("SupplierPaidBy")
+  transfersOut MoneyTransfer[] @relation("TransferFrom")
+  transfersIn  MoneyTransfer[] @relation("TransferTo")
   expenses    Expense[]
   withdrawals Withdrawal[]
   users       User[]
@@ -354,6 +357,8 @@ model Sale {
   returnedItemId         String?
   supplierPaymentStatus  SupplierPayment @default(PENDING)
   supplierPaidAt         DateTime?
+  // who paid the supplier (their In hand goes down); null on older orders = paid from the order money
+  supplierPaidById       String?
   paymentSourceId        String?
   orderSourceId          String?
   receivedById           String?
@@ -422,6 +427,7 @@ model Sale {
   orderSource            OrderSource?   @relation(fields: [orderSourceId], references: [id], onDelete: SetNull)
   receivedBy             Person?        @relation("ReceivedBy", fields: [receivedById], references: [id], onDelete: SetNull)
   dcPaidBy               Person?        @relation("DcPaidBy", fields: [dcPaidById], references: [id], onDelete: SetNull)
+  supplierPaidBy         Person?        @relation("SupplierPaidBy", fields: [supplierPaidById], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([city])
@@ -646,4 +652,25 @@ model InventoryLog {
   @@index([itemId, createdAt])
   @@index([createdAt])
   @@index([orderNo])
+}
+
+// Money sent from one person to another (e.g. Noman → Mujtaba, Meezan → Mashreq).
+// supplierPart: how much of it is supplier money (cover cost still to pay), so each person's
+// "supplier money / own money" split stays right after the transfer.
+model MoneyTransfer {
+  id           String   @id @default(cuid())
+  fromId       String
+  toId         String
+  amount       Float
+  supplierPart Float    @default(0)
+  date         DateTime
+  note         String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  from         Person   @relation("TransferFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to           Person   @relation("TransferTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([fromId, date])
+  @@index([toId, date])
 }

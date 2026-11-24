@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { X, Loader2, Landmark, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import AddMoneyDialog from './AddMoney'
+import SendMoneyDialog from './SendMoney'
 
 // Bank check: type the real balance from the bank app; the app compares it with In hand.
 // Business-only accounts and no cash, so the two should be equal. If not, the statement lines
@@ -66,6 +67,8 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<BankCheckRow | null>(null)
   const [fixing, setFixing] = useState(false)
+  const [others, setOthers] = useState<{ id: string; name: string }[]>([])
+  const [sendTo, setSendTo] = useState<{ id: string; name: string } | null>(null)
   const [hasOpening, setHasOpening] = useState(false)
   const [mounted, setMounted] = useState(false)
   const closeRef = React.useRef(onClose)
@@ -81,6 +84,10 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
         setBankName(d.bankName || '')
       })
       .catch((e) => toast.error(e.message))
+    fetch('/api/people')
+      .then((r) => r.json())
+      .then((ppl) => Array.isArray(ppl) && setOthers(ppl.filter((p: any) => p.id !== personId).map((p: any) => ({ id: p.id, name: p.name }))))
+      .catch(() => {})
     fetch(`/api/people/${personId}/money-entries`)
       .then((r) => r.json())
       .then((d) => setHasOpening(Boolean(d?.opening)))
@@ -212,15 +219,45 @@ export default function BankCheckDialog({ personId, name, onClose, onSaved }: { 
                     </ul>
                   )}
                   {Math.abs(result.difference) >= MATCH && (
-                    <button
-                      onClick={() => setFixing(true)}
-                      className="mt-2 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700"
-                    >
-                      Fix this difference ({result.difference > 0 ? '+' : '−'}
-                      {rs(Math.abs(result.difference))}) →
-                    </button>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {/* bank has less: usually money already sent to the other person */}
+                      {result.difference < 0 &&
+                        others.map((o) => (
+                          <button
+                            key={o.id}
+                            onClick={() => setSendTo(o)}
+                            className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700"
+                          >
+                            This {rs(Math.abs(result.difference))} was sent to {o.name} →
+                          </button>
+                        ))}
+                      <button
+                        onClick={() => setFixing(true)}
+                        className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-violet-700"
+                      >
+                        Fix this difference another way ({result.difference > 0 ? '+' : '−'}
+                        {rs(Math.abs(result.difference))}) →
+                      </button>
+                    </div>
                   )}
                 </div>
+              )}
+              {sendTo && result && (
+                <SendMoneyDialog
+                  from={{ id: personId, name }}
+                  people={[{ id: personId, name }, ...others]}
+                  inHand={data.inHand}
+                  initialToId={sendTo.id}
+                  initialAmount={Math.abs(result.difference)}
+                  initialNote={`sent earlier (found by bank check: bank ${rs(result.bankBalance)}, app ${rs(result.inHand)})`}
+                  onClose={() => setSendTo(null)}
+                  onSaved={() => {
+                    setSendTo(null)
+                    setResult(null)
+                    onSaved?.()
+                    toast.info('Saved. Do the bank check again to confirm it matches ✓')
+                  }}
+                />
               )}
               {fixing && result && (
                 <AddMoneyDialog

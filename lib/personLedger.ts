@@ -12,7 +12,9 @@
 //  − expense paid           Expense.paidById
 //  − withdrawal             Withdrawal.personId
 //  − delivery charge (DC)   Sale.dcPaidById, by order date, cancelled orders left out
-//  − stock bought           StockPayment kind BUSINESS (from in hand; savings are not in-hand money)
+//  − stock bought           StockPayment kind BUSINESS (from in hand; savings are not in-hand money;
+//                           ADVANCE uses an advance already given, so it is not cut again)
+//  − supplier advance       SupplierAdvance: money given to a supplier before the stock arrives
 //  + opening balance        MoneyEntry OPENING (money already in the account when the app started)
 //  + investment             MoneyEntry INVESTMENT (own money put in; also the person's capital)
 //  ± adjustment             MoneyEntry ADJUSTMENT (a correction with a reason)
@@ -37,6 +39,7 @@ export type LedgerKind =
   | 'courier'
   | 'supplier'
   | 'transfer'
+  | 'advance'
 
 export interface LedgerEntry {
   id: string // stable key (e.g. "order:#1194", "exp:<id>")
@@ -87,7 +90,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 // All entries, grouped by person (only people that exist). personId limits it to one person.
 export async function buildLedger(db: Db, personId?: string): Promise<Map<string, LedgerEntry[]>> {
   const only = (field: string) => (personId ? { [field]: personId } : { [field]: { not: null } })
-  const [people, received, expenses, withdrawals, dcPaid, stockPaid, moneyEntries, invoices, supplierPaid, transfers] = await Promise.all([
+  const [people, received, expenses, withdrawals, dcPaid, stockPaid, moneyEntries, invoices, supplierPaid, transfers, advances] = await Promise.all([
     db.person.findMany({ where: personId ? { id: personId } : {}, select: { id: true } }),
     db.sale.findMany({
       where: { paymentStatus: 'RECEIVED', ...only('receivedById') },
@@ -155,6 +158,10 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       where: personId ? { OR: [{ fromId: personId }, { toId: personId }] } : {},
       select: { id: true, fromId: true, toId: true, amount: true, supplierPart: true, date: true, note: true, createdBy: true, from: { select: { name: true } }, to: { select: { name: true } } },
     }),
+    db.supplierAdvance.findMany({
+      where: personId ? { personId } : {},
+      select: { id: true, personId: true, amount: true, date: true, note: true, createdBy: true, supplier: { select: { name: true } } },
+    }),
   ])
 
   // Orders each received invoice paid (whoever they went to)
@@ -217,6 +224,20 @@ export async function buildLedger(db: Db, personId?: string): Promise<Map<string
       amount: -e.amount,
       title: `Expense: ${e.title}`,
       detail: e.note || '',
+    })
+  }
+
+  // − Supplier advances (money given before the stock arrives)
+  for (const a of advances) {
+    push({
+      id: `adv:${a.id}`,
+      personId: a.personId,
+      date: a.date,
+      kind: 'advance',
+      amount: -a.amount,
+      title: `Advance to ${a.supplier.name}`,
+      detail: [a.note, 'for stock', a.createdBy ? `by ${a.createdBy}` : ''].filter(Boolean).join(' · '),
+      refId: a.id,
     })
   }
 

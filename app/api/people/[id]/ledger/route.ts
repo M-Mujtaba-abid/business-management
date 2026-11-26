@@ -39,6 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       withdrawal: { count: 0, amount: 0 },
       dc: { count: 0, amount: 0 },
       stock: { count: 0, amount: 0 },
+      advance: { count: 0, amount: 0 },
       opening: { count: 0, amount: 0 },
       investment: { count: 0, amount: 0 },
       adjustment: { count: 0, amount: 0 },

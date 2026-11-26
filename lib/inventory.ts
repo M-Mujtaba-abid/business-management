@@ -7,6 +7,7 @@
 //  - Sale.inventoryHeld says whether a row currently holds stock, so nothing is taken or given back twice
 import type { Prisma } from '@prisma/client'
 import type { Actor } from '@/lib/orderLog'
+import { advanceLeft } from '@/lib/supplierAdvance'
 
 type Db = Prisma.TransactionClient
 
@@ -165,7 +166,7 @@ export const newAverage = (stockQty: number, avgCost: number, qty: number, unitC
 export interface PaymentInput {
   personId: string
   amount: number
-  kind: 'BUSINESS' | 'SAVINGS'
+  kind: 'BUSINESS' | 'SAVINGS' | 'ADVANCE'
 }
 
 // Buying stock: adds it, updates the average cost, saves who paid, and logs it.
@@ -188,7 +189,21 @@ export async function addPurchase(
   }
   for (const p of payments) {
     if (!names.people.has(p.personId)) throw new InventoryError('Pick who paid.')
-    if (p.kind !== 'BUSINESS' && p.kind !== 'SAVINGS') throw new InventoryError('Pick "In hand" or "Savings" for each payment.')
+    if (p.kind !== 'BUSINESS' && p.kind !== 'SAVINGS' && p.kind !== 'ADVANCE') throw new InventoryError('Pick "In hand", "Savings" or "Advance" for each payment.')
+  }
+  // From advance: only what that person already gave this supplier and is not used yet
+  const fromAdvance = new Map<string, number>()
+  for (const p of payments) if (p.kind === 'ADVANCE') fromAdvance.set(p.personId, round2((fromAdvance.get(p.personId) || 0) + p.amount))
+  if (fromAdvance.size) {
+    if (!input.supplierId) throw new InventoryError('Pick the supplier to pay from their advance.')
+    for (const [personId, amount] of Array.from(fromAdvance.entries())) {
+      const left = await advanceLeft(db, input.supplierId, personId)
+      if (amount > left + 0.5) {
+        throw new InventoryError(
+          `${names.people.get(personId)} has only ${rs(left)} advance left with ${names.suppliers.get(input.supplierId) || 'this supplier'} (this needs ${rs(amount)}).`
+        )
+      }
+    }
   }
 
   const item = await db.inventoryItem.findUnique({ where: { id: input.itemId } })
@@ -213,7 +228,7 @@ export async function addPurchase(
   })
 
   const who = payments
-    .map((p) => `${names.people.get(p.personId)} ${rs(p.amount)} ${p.kind === 'SAVINGS' ? 'from savings' : 'from in hand'}`)
+    .map((p) => `${names.people.get(p.personId)} ${rs(p.amount)} ${p.kind === 'SAVINGS' ? 'from savings' : p.kind === 'ADVANCE' ? 'from advance' : 'from in hand'}`)
     .join(' + ')
   const supplier = input.supplierId ? names.suppliers.get(input.supplierId) : null
   await logInventory(db, {

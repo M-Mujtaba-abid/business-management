@@ -144,6 +144,7 @@ model Supplier {
   sales          Sale[]
   inventoryItems InventoryItem[]
   stockPurchases StockPurchase[]
+  advances       SupplierAdvance[]
 }
 
 model Category {
@@ -167,6 +168,7 @@ model Person {
   supplierPaidSales Sale[] @relation("SupplierPaidBy")
   transfersOut MoneyTransfer[] @relation("TransferFrom")
   transfersIn  MoneyTransfer[] @relation("TransferTo")
+  supplierAdvances SupplierAdvance[]
   expenses    Expense[]
   withdrawals Withdrawal[]
   users       User[]
@@ -593,6 +595,7 @@ model InventoryItem {
 enum StockPaymentKind {
   BUSINESS // from the person's business money in hand (lowers their In hand)
   SAVINGS  // from the person's own savings: an investment in the business
+  ADVANCE  // from an advance already given to the purchase supplier (In hand already went down then)
 }
 
 model StockPurchase {
@@ -673,4 +676,24 @@ model MoneyTransfer {
 
   @@index([fromId, date])
   @@index([toId, date])
+}
+
+// Money given to a supplier before the stock arrives (e.g. Rs 24,000 to Faizan for covers).
+// It leaves the giver's In hand when given; stock bought later with StockPayment kind ADVANCE uses it up
+// (no second cut from In hand). Left with the supplier = given − used.
+model SupplierAdvance {
+  id         String   @id @default(cuid())
+  supplierId String
+  personId   String   // who gave it (from their In hand)
+  amount     Float
+  date       DateTime @default(now())
+  note       String?
+  createdBy  String?
+  createdAt  DateTime @default(now())
+
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  person     Person   @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId])
+  @@index([personId, date])
 }

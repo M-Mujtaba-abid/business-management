@@ -17,6 +17,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Archive,
+  HandCoins,
 } from 'lucide-react'
 
 // Inventory page: our own stock. Add items, buy stock (who paid: from in hand or from savings),
@@ -39,6 +40,25 @@ interface Item {
   category: Option | null
   supplier: Option | null
 }
+interface AdvBalance {
+  supplierId: string
+  supplier: string
+  personId: string
+  person: string
+  given: number
+  used: number
+  left: number
+}
+// Advance still with this supplier, per person who gave it
+interface AdvanceInfo {
+  supplier: string
+  rows: AdvBalance[]
+}
+const advanceFor = (balances: AdvBalance[], supplierId: string, sups: Option[]): AdvanceInfo | undefined => {
+  const rows = balances.filter((b) => b.supplierId === supplierId && b.left > 0.5)
+  return supplierId && rows.length ? { supplier: sups.find((x) => x.id === supplierId)?.name || 'supplier', rows } : undefined
+}
+
 interface LogLine {
   id: string
   action: string
@@ -92,9 +112,39 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 interface PayRow {
   personId: string
   amount: string
-  kind: 'BUSINESS' | 'SAVINGS'
+  kind: 'BUSINESS' | 'SAVINGS' | 'ADVANCE'
 }
-function PaymentsEditor({ people, total, rows, setRows }: { people: Option[]; total: number; rows: PayRow[]; setRows: (r: PayRow[]) => void }) {
+function PaymentsEditor({
+  people,
+  total,
+  rows,
+  setRows,
+  advance,
+}: {
+  people: Option[]
+  total: number
+  rows: PayRow[]
+  setRows: (r: PayRow[]) => void
+  advance?: AdvanceInfo // advance already given to the picked supplier
+}) {
+  const kinds = (advance ? ['BUSINESS', 'SAVINGS', 'ADVANCE'] : ['BUSINESS', 'SAVINGS']) as PayRow['kind'][]
+  // the supplier changed and has no advance: a row left on Advance goes back to In hand
+  useEffect(() => {
+    if (!advance && rows.some((r) => r.kind === 'ADVANCE')) setRows(rows.map((r) => (r.kind === 'ADVANCE' ? { ...r, kind: 'BUSINESS' } : r)))
+  }, [advance, rows, setRows])
+  const payFromAdvance = () => {
+    // use the advance first (largest first), the rest from that person's In hand
+    let need = Math.round(total * 100) / 100
+    const next: PayRow[] = []
+    for (const a of advance?.rows || []) {
+      if (need <= 0) break
+      const amt = Math.min(a.left, need)
+      next.push({ personId: a.personId, amount: String(Math.round(amt * 100) / 100), kind: 'ADVANCE' })
+      need = Math.round((need - amt) * 100) / 100
+    }
+    if (need > 0) next.push({ personId: advance?.rows[0]?.personId || '', amount: String(need), kind: 'BUSINESS' })
+    setRows(next)
+  }
   const paid = rows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0)
   const left = Math.round((total - paid) * 100) / 100
   const update = (i: number, patch: Partial<PayRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -106,6 +156,19 @@ function PaymentsEditor({ people, total, rows, setRows }: { people: Option[]; to
           {Math.abs(left) < 0.5 ? 'Fully covered ✓' : left > 0 ? `${rs(left)} still to cover` : `${rs(-left)} too much`}
         </span>
       </div>
+      {advance && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] text-indigo-800">
+          <HandCoins className="h-3.5 w-3.5" />
+          <span>
+            Advance with {advance.supplier}: {advance.rows.map((a) => `${a.person} ${rs(a.left)}`).join(' · ')}
+          </span>
+          {total > 0 && (
+            <button type="button" onClick={payFromAdvance} className="ml-auto rounded-md bg-indigo-600 px-2 py-0.5 font-bold text-white hover:bg-indigo-700">
+              Pay from advance
+            </button>
+          )}
+        </div>
+      )}
       {rows.map((r, i) => (
         <div key={i} className="grid grid-cols-[1fr_110px_auto] gap-2 items-center">
           <select value={r.personId} onChange={(e) => update(i, { personId: e.target.value })} className={input}>
@@ -119,17 +182,23 @@ function PaymentsEditor({ people, total, rows, setRows }: { people: Option[]; to
           <input type="number" min="0" step="0.01" value={r.amount} onChange={(e) => update(i, { amount: e.target.value })} placeholder="Amount" className={input} />
           <div className="flex items-center gap-1">
             <div className="flex rounded-lg border border-slate-200 p-0.5">
-              {(['BUSINESS', 'SAVINGS'] as const).map((k) => (
+              {kinds.map((k) => (
                 <button
                   key={k}
                   type="button"
                   onClick={() => update(i, { kind: k })}
-                  title={k === 'BUSINESS' ? 'From business money in hand (lowers their In hand)' : 'From personal savings (an investment)'}
+                  title={
+                    k === 'BUSINESS'
+                      ? 'From business money in hand (lowers their In hand)'
+                      : k === 'SAVINGS'
+                      ? 'From personal savings (an investment)'
+                      : `From the advance already given to ${advance?.supplier} (In hand is not cut again)`
+                  }
                   className={`rounded-md px-2 py-1 text-[11px] font-bold ${
-                    r.kind === k ? (k === 'BUSINESS' ? 'bg-violet-600 text-white' : 'bg-amber-500 text-white') : 'text-slate-500'
+                    r.kind === k ? (k === 'BUSINESS' ? 'bg-violet-600 text-white' : k === 'SAVINGS' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white') : 'text-slate-500'
                   }`}
                 >
-                  {k === 'BUSINESS' ? 'In hand' : 'Savings'}
+                  {k === 'BUSINESS' ? 'In hand' : k === 'SAVINGS' ? 'Savings' : 'Advance'}
                 </button>
               ))}
             </div>
@@ -151,6 +220,12 @@ function PaymentsEditor({ people, total, rows, setRows }: { people: Option[]; to
       <p className="text-[10px] text-slate-400">
         <b>In hand</b> = paid from the business money that person holds (their In hand goes down). <b>Savings</b> = their own money put into the
         business (shown as an investment).
+        {advance && (
+          <>
+            {' '}
+            <b>Advance</b> = from money already given to {advance.supplier} earlier (In hand already went down then, so it is not cut again).
+          </>
+        )}
       </p>
     </div>
   )
@@ -161,7 +236,21 @@ const defaultPayRows = (people: Option[], total: number): PayRow[] => [
 ]
 
 // ── Add item ──
-function AddItemModal({ cats, sups, people, onClose, onDone }: { cats: Option[]; sups: Option[]; people: Option[]; onClose: () => void; onDone: () => void }) {
+function AddItemModal({
+  cats,
+  sups,
+  people,
+  advances,
+  onClose,
+  onDone,
+}: {
+  cats: Option[]
+  sups: Option[]
+  people: Option[]
+  advances: AdvBalance[]
+  onClose: () => void
+  onDone: () => void
+}) {
   const [f, setF] = useState({ name: '', categoryId: '', supplierId: '', salePrice: '', lowStockAt: '', qty: '', unitCost: '' })
   const total = (parseInt(f.qty, 10) || 0) * (parseFloat(f.unitCost) || 0)
   const [pay, setPay] = useState<PayRow[]>(defaultPayRows(people, 0))
@@ -249,7 +338,9 @@ function AddItemModal({ cats, sups, people, onClose, onDone }: { cats: Option[];
               <div className="px-3 py-2 text-sm font-mono font-bold text-slate-800">{rs(total)}</div>
             </div>
           </div>
-          {(parseInt(f.qty, 10) || 0) > 0 && <PaymentsEditor people={people} total={total} rows={pay} setRows={setPay} />}
+          {(parseInt(f.qty, 10) || 0) > 0 && (
+            <PaymentsEditor people={people} total={total} rows={pay} setRows={setPay} advance={advanceFor(advances, f.supplierId, sups)} />
+          )}
         </div>
 
         <div className="flex justify-end gap-2">
@@ -266,7 +357,21 @@ function AddItemModal({ cats, sups, people, onClose, onDone }: { cats: Option[];
 }
 
 // ── Buy stock ──
-function BuyModal({ item, sups, people, onClose, onDone }: { item: Item; sups: Option[]; people: Option[]; onClose: () => void; onDone: () => void }) {
+function BuyModal({
+  item,
+  sups,
+  people,
+  advances,
+  onClose,
+  onDone,
+}: {
+  item: Item
+  sups: Option[]
+  people: Option[]
+  advances: AdvBalance[]
+  onClose: () => void
+  onDone: () => void
+}) {
   const [qty, setQty] = useState('')
   const [unitCost, setUnitCost] = useState(item.avgCost ? String(item.avgCost) : '')
   const [supplierId, setSupplierId] = useState(item.supplierId || '')
@@ -336,7 +441,7 @@ function BuyModal({ item, sups, people, onClose, onDone }: { item: Item; sups: O
             Stock after: <b>{item.stockQty + (parseInt(qty, 10) || 0)}</b>
           </span>
         </div>
-        <PaymentsEditor people={people} total={total} rows={pay} setRows={setPay} />
+        <PaymentsEditor people={people} total={total} rows={pay} setRows={setPay} advance={advanceFor(advances, supplierId, sups)} />
         <div>
           <label className={label}>Note</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional" className={input} />
@@ -604,26 +709,242 @@ function MovementList({ itemId, showItem }: { itemId?: string; showItem?: boolea
 }
 
 // ── Page ──
+// ── Supplier advances: money given before the stock arrives ──
+interface AdvData {
+  balances: AdvBalance[]
+  advances: { id: string; supplierId: string; personId: string; amount: number; date: string; note: string | null; supplier: Option; person: Option }[]
+  usedLines: { id: string; person: string; supplier: string; amount: number; date: string; note: string }[]
+  withdrawals: { id: string; personId: string; amount: number; reason: string | null; createdAt: string; person: Option }[]
+}
+function AdvancesModal({ sups, people, onClose, onChanged }: { sups: Option[]; people: Option[]; onClose: () => void; onChanged: () => void }) {
+  const [data, setData] = useState<AdvData | null>(null)
+  const [f, setF] = useState({ supplierId: '', personId: people[0]?.id || '', amount: '', date: new Date().toISOString().slice(0, 10), note: '' })
+  const [conv, setConv] = useState<{ id: string; supplierId: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(() => {
+    send('/api/supplier-advances', 'GET')
+      .then(setData)
+      .catch((e) => toast.error(e.message))
+  }, [])
+  useEffect(() => {
+    load()
+  }, [load])
+  const changed = () => {
+    load()
+    onChanged()
+  }
+
+  const give = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      await send('/api/supplier-advances', 'POST', f)
+      toast.success('Advance saved')
+      setF({ ...f, amount: '', note: '' })
+      changed()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const convert = async () => {
+    if (!conv?.supplierId) return toast.error('Pick the supplier')
+    setBusy(true)
+    try {
+      await send('/api/supplier-advances', 'POST', { supplierId: conv.supplierId, fromWithdrawalId: conv.id })
+      toast.success('Withdrawal is now a supplier advance')
+      setConv(null)
+      changed()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const remove = async (id: string) => {
+    if (!confirm('Delete this advance?')) return
+    try {
+      await send(`/api/supplier-advances/${id}`, 'DELETE')
+      toast.success('Deleted')
+      changed()
+    } catch (err: any) {
+      toast.error(err.message)
+    }
+  }
+  const day = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const history = data
+    ? [
+        ...data.advances.map((a) => ({ id: a.id, del: true, date: a.date, text: `${a.person.name} gave ${a.supplier.name}`, note: a.note || '', amount: a.amount })),
+        ...data.usedLines.map((u) => ({ id: u.id, del: false, date: u.date, text: `Stock received from ${u.supplier} (advance of ${u.person})`, note: u.note, amount: -u.amount })),
+      ].sort((a, b) => +new Date(b.date) - +new Date(a.date))
+    : []
+
+  return (
+    <Modal title="Supplier advances" onClose={onClose} wide>
+      <div className="space-y-4">
+        <p className="text-[11px] text-slate-500">
+          Money given to a supplier before the stock comes. It leaves In hand when given. When the stock arrives, use <b>Buy stock → Advance</b>, so it is
+          not cut from In hand a second time.
+        </p>
+        {!data ? (
+          <div className="flex justify-center py-6 text-slate-400">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : (
+          <>
+            {/* Balances */}
+            <div className="grid sm:grid-cols-2 gap-2">
+              {data.balances.length === 0 && <p className="text-xs text-slate-500">No advances yet.</p>}
+              {data.balances.map((b) => (
+                <div key={b.supplierId + b.personId} className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+                  <div className="text-xs font-bold text-indigo-900">
+                    {b.supplier} <span className="font-normal text-indigo-600">· given by {b.person}</span>
+                  </div>
+                  <div className="mt-1 font-mono text-lg font-black text-slate-900">{rs(b.left)} left</div>
+                  <div className="text-[11px] text-slate-500">
+                    given {rs(b.given)} · stock received {rs(b.used)}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Give a new advance */}
+            <form onSubmit={give} className="rounded-xl border border-slate-200 p-3 space-y-2">
+              <div className="text-xs font-bold text-slate-800">Give an advance</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <select value={f.supplierId} onChange={(e) => setF({ ...f, supplierId: e.target.value })} className={input}>
+                  <option value="">Supplier…</option>
+                  {sups.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <select value={f.personId} onChange={(e) => setF({ ...f, personId: e.target.value })} className={input}>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} (from In hand)
+                    </option>
+                  ))}
+                </select>
+                <input type="number" min="0" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="Amount" className={input} />
+                <input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} className={input} />
+              </div>
+              <div className="flex gap-2">
+                <input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Note (optional)" className={input} />
+                <button
+                  disabled={busy || !f.supplierId || !(parseFloat(f.amount) > 0)}
+                  className="shrink-0 rounded-lg bg-indigo-600 px-4 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+
+            {/* A withdrawal that was really an advance */}
+            {data.withdrawals.length > 0 && (
+              <div className="rounded-xl border border-slate-200 p-3">
+                <div className="text-xs font-bold text-slate-800">Was a withdrawal really an advance?</div>
+                <p className="mb-2 text-[11px] text-slate-500">Turn it into a supplier advance. In hand stays the same; it stops counting as profit taken out.</p>
+                <ul className="divide-y divide-slate-100 text-xs">
+                  {data.withdrawals.map((w) => (
+                    <li key={w.id} className="flex flex-wrap items-center gap-2 py-1.5">
+                      <span className="w-14 text-slate-400">{day(w.createdAt)}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <b>{w.person.name}</b> {w.reason && <span className="text-slate-500">· {w.reason}</span>}
+                      </span>
+                      <span className="font-mono font-semibold">{rs(w.amount)}</span>
+                      {conv?.id === w.id ? (
+                        <span className="flex items-center gap-1">
+                          <select
+                            value={conv.supplierId}
+                            onChange={(e) => setConv({ ...conv, supplierId: e.target.value })}
+                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                          >
+                            <option value="">Supplier…</option>
+                            {sups.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button onClick={convert} disabled={busy || !conv.supplierId} className="rounded-lg bg-indigo-600 px-2 py-1 font-bold text-white disabled:opacity-50">
+                            OK
+                          </button>
+                          <button onClick={() => setConv(null)} className="px-1 text-slate-400">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConv({ id: w.id, supplierId: '' })}
+                          className="rounded-lg border border-indigo-200 px-2 py-1 font-semibold text-indigo-700 hover:bg-indigo-50"
+                        >
+                          Make it an advance
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* History */}
+            {history.length > 0 && (
+              <div>
+                <div className="mb-1 text-xs font-bold text-slate-800">History</div>
+                <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 text-xs">
+                  {history.map((h) => (
+                    <li key={h.id} className="flex items-center gap-2 px-3 py-1.5">
+                      <span className="w-14 shrink-0 text-slate-400">{day(h.date)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold text-slate-800">{h.text}</span>
+                        {h.note && <span className="block truncate text-[11px] text-slate-500">{h.note}</span>}
+                      </span>
+                      <span className={`font-mono font-semibold ${h.amount >= 0 ? 'text-indigo-700' : 'text-slate-600'}`}>
+                        {h.amount >= 0 ? '+' : '−'} {rs(Math.abs(h.amount))}
+                      </span>
+                      {h.del && (
+                        <button onClick={() => remove(h.id)} title="Delete" className="p-1 text-slate-300 hover:text-rose-600">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 export default function InventoryPage() {
   const [items, setItems] = useState<Item[]>([])
   const [cats, setCats] = useState<Option[]>([])
   const [sups, setSups] = useState<Option[]>([])
   const [people, setPeople] = useState<Option[]>([])
+  const [advances, setAdvances] = useState<AdvBalance[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'items' | 'log'>('items')
   const [showArchived, setShowArchived] = useState(false)
-  const [modal, setModal] = useState<{ kind: 'add' | 'buy' | 'adjust' | 'edit' | 'history'; item?: Item } | null>(null)
+  const [modal, setModal] = useState<{ kind: 'add' | 'buy' | 'adjust' | 'edit' | 'history' | 'advances'; item?: Item } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [inv, c, s, p] = await Promise.all([
+      const [inv, c, s, p, adv] = await Promise.all([
         send(`/api/inventory${showArchived ? '?archived=1' : ''}`, 'GET'),
         send('/api/categories', 'GET'),
         send('/api/suppliers', 'GET'),
         send('/api/people', 'GET'),
+        send('/api/supplier-advances', 'GET').catch(() => ({ balances: [] })),
       ])
+      setAdvances(Array.isArray(adv?.balances) ? adv.balances : [])
       setItems(inv)
       setCats(Array.isArray(c) ? c : [])
       setSups(Array.isArray(s) ? s : [])
@@ -710,6 +1031,14 @@ export default function InventoryPage() {
                 <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="accent-teal-600" /> Archived
               </label>
               <button
+                onClick={() => setModal({ kind: 'advances' })}
+                title="Money given to suppliers before the stock comes"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold"
+              >
+                <HandCoins className="h-4 w-4" /> Advances
+                {advances.some((a) => a.left > 0.5) && <span className="font-mono">{rs(advances.reduce((t, a) => t + Math.max(0, a.left), 0))}</span>}
+              </button>
+              <button
                 onClick={() => setModal({ kind: 'add' })}
                 className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold"
               >
@@ -795,8 +1124,9 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {modal?.kind === 'add' && <AddItemModal cats={cats} sups={sups} people={people} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.kind === 'buy' && modal.item && <BuyModal item={modal.item} sups={sups} people={people} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'add' && <AddItemModal cats={cats} sups={sups} people={people} advances={advances} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'buy' && modal.item && <BuyModal item={modal.item} sups={sups} people={people} advances={advances} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === 'advances' && <AdvancesModal sups={sups} people={people} onClose={() => setModal(null)} onChanged={load} />}
       {modal?.kind === 'adjust' && modal.item && <AdjustModal item={modal.item} onClose={() => setModal(null)} onDone={done} />}
       {modal?.kind === 'edit' && modal.item && <EditModal item={modal.item} cats={cats} sups={sups} onClose={() => setModal(null)} onDone={done} />}
       {modal?.kind === 'history' && modal.item && (

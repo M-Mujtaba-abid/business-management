@@ -449,6 +449,26 @@ export default function OrderList({
     return starts
   }, [groups])
 
+  // Very wide screens (≥1536px) get the separate Date column; laptops show the date inside the Order column
+  // Small laptops (<1280px) get a compact table: Leopards + WhatsApp go under Status, Supplier under Payment
+  const [tableSize, setTableSize] = useState<'wide' | 'mid' | 'compact'>('mid')
+  useEffect(() => {
+    const wide = window.matchMedia?.('(min-width: 1536px)')
+    const mid = window.matchMedia?.('(min-width: 1280px)')
+    if (!wide || !mid) return
+    const update = () => setTableSize(wide.matches ? 'wide' : mid.matches ? 'mid' : 'compact')
+    update()
+    wide.addEventListener?.('change', update)
+    mid.addEventListener?.('change', update)
+    return () => {
+      wide.removeEventListener?.('change', update)
+      mid.removeEventListener?.('change', update)
+    }
+  }, [])
+  const wideTable = tableSize === 'wide'
+  const compact = tableSize === 'compact'
+  const tableCols = 11 - (wideTable ? 0 : 1) - (compact ? 3 : 0)
+
   // Bottom of the list on screen → load the next older month
   const moreRef = useRef<HTMLDivElement | null>(null)
   const loadMoreRef = useRef(onLoadMore)
@@ -507,9 +527,15 @@ export default function OrderList({
   const amountNote = (g: OrderGroup) =>
     g.lead.status === 'DELIVERED' || g.lead.status === 'RETURNED' ? (
       <span className="block leading-tight">
-        <span className="block text-slate-400">Cost {formatPKR(g.costTotal)}</span>
+        <span className="block text-slate-400">
+          Cost <span className="whitespace-nowrap">{formatPKR(g.costTotal)}</span>
+        </span>
         <span className={`block ${g.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-          Profit {g.profit >= 0 ? '+' : ''}{formatPKR(g.profit)}
+          Profit{' '}
+          <span className="whitespace-nowrap">
+            {g.profit >= 0 ? '+' : ''}
+            {formatPKR(g.profit)}
+          </span>
         </span>
       </span>
     ) : (
@@ -543,12 +569,12 @@ export default function OrderList({
 
   return (
     // Large screens: the card fills the screen; the top bar and the column headings stay put, only the orders scroll
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm lg:flex lg:flex-col lg:h-[calc(100dvh-6.75rem)]">
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm lg:flex lg:flex-col lg:h-[calc(100dvh-6.75rem)] lg:min-h-[480px]">
 
       {/* ── Top bar: status tabs · search · filters ── */}
       <div className="p-3 sm:p-4 border-b border-slate-100 space-y-3 lg:shrink-0">
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
-          <div className="flex flex-wrap items-center gap-1 bg-slate-100 rounded-xl p-1">
+        <div className="flex flex-col 2xl:flex-row 2xl:items-center gap-2 2xl:gap-3">
+          <div className="flex flex-wrap items-center gap-1 bg-slate-100 rounded-xl p-1 w-fit max-w-full">
             {statusTabs.map((tab) => (
               <button
                 key={tab.value}
@@ -572,8 +598,8 @@ export default function OrderList({
             ))}
           </div>
 
-          <div className="flex items-center gap-2 md:ml-auto w-full md:w-auto">
-            <div className="relative flex-1 md:w-72">
+          <div className="flex items-center gap-2 2xl:ml-auto w-full 2xl:w-auto">
+            <div className="relative flex-1 2xl:w-72">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
@@ -960,20 +986,20 @@ export default function OrderList({
 
             {/* ── Desktop: table (photo · date · order · amount · status · payment · supplier) ── */}
             <div className="hidden lg:block rounded-xl border border-slate-200 lg:mt-3">
-              <table className="w-full min-w-[1180px] table-fixed text-left text-xs text-slate-700">
+              <table className={`w-full table-fixed text-left text-xs text-slate-700 ${wideTable ? 'min-w-[1120px]' : compact ? 'min-w-[640px]' : 'min-w-[980px]'}`}>
                 {/* fixed widths keep the right-side columns compact so Edit stays visible without scrolling */}
                 <colgroup>
                   <col className="w-9" />
-                  <col className="w-[80px]" />
-                  <col className="w-[92px]" />
+                  <col className={compact ? 'w-[60px]' : 'w-[72px]'} />
+                  {wideTable && <col className="w-[92px]" />}
                   <col />
-                  <col className="w-[150px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[148px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[124px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[48px]" />
+                  {!compact && <col className="w-[118px]" />}
+                  <col className={compact ? 'w-[96px]' : 'w-[108px]'} />
+                  <col className="w-[136px]" />
+                  {!compact && <col className="w-[108px]" />}
+                  <col className={compact ? 'w-[116px]' : 'w-[108px]'} />
+                  {!compact && <col className="w-[96px]" />}
+                  <col className={compact ? 'w-[40px]' : 'w-[44px]'} />
                 </colgroup>
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
@@ -987,14 +1013,14 @@ export default function OrderList({
                       />
                     </th>
                     <th className="px-2 py-2.5">Photo</th>
-                    <th className="px-2 py-2.5">Date</th>
+                    {wideTable && <th className="px-2 py-2.5">Date</th>}
                     <th className="px-3 py-2.5">Order</th>
-                    <th className="px-2 py-2.5">WhatsApp</th>
+                    {!compact && <th className="px-2 py-2.5">WhatsApp</th>}
                     <th className="px-2 py-2.5">Amount</th>
-                    <th className="px-2 py-2.5">Status</th>
-                    <th className="px-2 py-2.5">Leopards</th>
-                    <th className="px-2 py-2.5">Payment</th>
-                    <th className="px-2 py-2.5">Supplier</th>
+                    <th className="px-2 py-2.5">{compact ? 'Status · Leopards' : 'Status'}</th>
+                    {!compact && <th className="px-2 py-2.5">Leopards</th>}
+                    <th className="px-2 py-2.5">{compact ? 'Payment · Supplier' : 'Payment'}</th>
+                    {!compact && <th className="px-2 py-2.5">Supplier</th>}
                     <th className="pr-3 pl-1 py-2.5 text-right">Edit</th>
                   </tr>
                 </thead>
@@ -1005,11 +1031,64 @@ export default function OrderList({
                     // Striped rows: every second order is light grey so rows are easy to tell apart
                     const stripe = rowIndex % 2 === 1 ? 'bg-slate-100/80' : 'bg-white'
                     const band = monthBands.get(rowIndex)
+                    const hasWa = (!!sale.customerResponse && sale.customerResponse !== 'NONE') || !!sale.whatsapp?.length
+                    const waCell = (
+                      <>
+                          {(sale.customerResponse && sale.customerResponse !== 'NONE') || !!sale.whatsapp?.length ? (
+                            <div className="flex flex-col items-start gap-1 min-w-0">
+                              <CustomerReplyBadge response={sale.customerResponse} at={sale.customerRespondedAt} />
+                              <div className="max-w-full overflow-hidden">
+                                <WhatsAppMsgStatus orderNo={sale.orderNo} orderStatus={sale.status} messages={sale.whatsapp} onChanged={onChanged} />
+                              </div>
+                              <BillStatus messages={sale.whatsapp} />
+                              {!!sale.whatsapp?.length && (
+                                <WhatsAppChatButton phone={sale.customerPhone} customerName={sale.customerName} orderNo={sale.orderNo} />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                      </>
+                    )
+                    const leopardsCell = (
+                      <>
+                          <CourierCell
+                            trackingNumber={sale.trackingNumber}
+                            status={sale.courierStatus}
+                            code={sale.courierStatusCode}
+                            reason={sale.courierReason}
+                            at={sale.courierStatusAt}
+                          />
+                          <LeopardsMoneyButton
+                            payout={sale.courierPayout}
+                            payment={sale.courierPayment}
+                            money={sale.courierMoney}
+                            checkedAt={sale.courierMoneyAt}
+                            orderNo={sale.orderNo}
+                            orderTotal={g.saleTotal}
+                          />
+                          {/* Delivered Leopards parcel whose money was not fetched yet */}
+                          {sale.status === 'DELIVERED' &&
+                            sale.paymentStatus === 'NOT_RECEIVED' &&
+                            sale.courierPayout == null &&
+                            /^[A-Z]{2}\d{10}$/i.test((sale.trackingNumber || '').trim()) && (
+                              <div className="mt-1 text-[10px] leading-snug text-slate-400" title="Press Check Leopards (or wait for the daily check at 6 pm)">
+                                Money: not checked yet
+                              </div>
+                            )}
+                      </>
+                    )
+                    const supplierCell = (
+                      <>
+                          <div className="text-[11px] text-slate-600 mb-1 truncate">{g.supplierNames.join(', ') || <span className="text-slate-300">—</span>}</div>
+                          <GroupSupplierBadge g={g} onClick={() => toggleSupplier(g)} />
+                      </>
+                    )
                     return (
                       <React.Fragment key={g.key}>
                       {band && (
                         <tr className="bg-slate-800 text-white">
-                          <td colSpan={11} className="px-3 py-1.5 text-[11px] font-bold">
+                          <td colSpan={tableCols} className="px-3 py-1.5 text-[11px] font-bold">
                             {monthName(band.key)}
                             <span className="ml-2 font-mono font-semibold text-slate-300">
                               · {band.count} order{band.count !== 1 ? 's' : ''}
@@ -1033,18 +1112,25 @@ export default function OrderList({
                         {/* Photo (hover = big preview) */}
                         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
                           <div onClick={() => onSelectOrder(sale)}>
-                            <OrderThumb sale={sale} size={64} />
+                            <OrderThumb sale={sale} size={compact ? 44 : 56} />
                           </div>
                         </td>
 
                         {/* Date + time */}
-                        <td className="px-2 py-2.5 whitespace-nowrap">
-                          <div className="text-[12px] font-semibold text-slate-700">{dateLabel(sale.createdAt)}</div>
-                          <div className="text-[11px] text-slate-400">{timeLabel(sale.createdAt)}</div>
-                        </td>
+                        {wideTable && (
+                          <td className="px-2 py-2.5 whitespace-nowrap">
+                            <div className="text-[12px] font-semibold text-slate-700">{dateLabel(sale.createdAt)}</div>
+                            <div className="text-[11px] text-slate-400">{timeLabel(sale.createdAt)}</div>
+                          </td>
+                        )}
 
                         {/* Order details */}
                         <td className="px-3 py-2.5 min-w-0">
+                          {!wideTable && (
+                            <div className="mb-0.5 text-[10px] font-semibold text-slate-400 whitespace-nowrap">
+                              {dateLabel(sale.createdAt)} · {timeLabel(sale.createdAt)}
+                            </div>
+                          )}
                           <div className="flex items-center gap-1.5 min-w-0">
                             {sale.orderNo && (
                               <span className="text-[11px] font-bold text-slate-400 font-mono shrink-0">
@@ -1084,26 +1170,15 @@ export default function OrderList({
                         </td>
 
                         {/* WhatsApp: customer reply, last message, chat */}
+                        {!compact && (
                         <td className="px-2 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
-                          {(sale.customerResponse && sale.customerResponse !== 'NONE') || !!sale.whatsapp?.length ? (
-                            <div className="flex flex-col items-start gap-1 min-w-0">
-                              <CustomerReplyBadge response={sale.customerResponse} at={sale.customerRespondedAt} />
-                              <div className="max-w-full overflow-hidden">
-                                <WhatsAppMsgStatus orderNo={sale.orderNo} orderStatus={sale.status} messages={sale.whatsapp} onChanged={onChanged} />
-                              </div>
-                              <BillStatus messages={sale.whatsapp} />
-                              {!!sale.whatsapp?.length && (
-                                <WhatsAppChatButton phone={sale.customerPhone} customerName={sale.customerName} orderNo={sale.orderNo} />
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
+                          {waCell}
                         </td>
+                        )}
 
                         {/* Amount */}
-                        <td className="px-2 py-2.5 font-mono whitespace-nowrap">
-                          <div className="text-[13px] font-bold text-slate-900">{formatPKR(g.saleTotal)}</div>
+                        <td className="px-2 py-2.5 font-mono overflow-hidden">
+                          <div className="text-[13px] font-bold text-slate-900 whitespace-nowrap">{formatPKR(g.saleTotal)}</div>
                           <div className="text-[11px] font-semibold mt-0.5">{amountNote(g)}</div>
                         </td>
 
@@ -1135,35 +1210,20 @@ export default function OrderList({
                               onChanged={onChanged}
                             />
                           </div>
+                          {compact && (
+                            <>
+                              {sale.trackingNumber && <div className="mt-1.5 border-t border-slate-200/70 pt-1.5">{leopardsCell}</div>}
+                              {hasWa && <div className="mt-1.5 border-t border-slate-200/70 pt-1.5">{waCell}</div>}
+                            </>
+                          )}
                         </td>
 
                         {/* Leopards: latest courier status, when, and its note */}
+                        {!compact && (
                         <td className="px-2 py-2.5 align-middle overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                          <CourierCell
-                            trackingNumber={sale.trackingNumber}
-                            status={sale.courierStatus}
-                            code={sale.courierStatusCode}
-                            reason={sale.courierReason}
-                            at={sale.courierStatusAt}
-                          />
-                          <LeopardsMoneyButton
-                            payout={sale.courierPayout}
-                            payment={sale.courierPayment}
-                            money={sale.courierMoney}
-                            checkedAt={sale.courierMoneyAt}
-                            orderNo={sale.orderNo}
-                            orderTotal={g.saleTotal}
-                          />
-                          {/* Delivered Leopards parcel whose money was not fetched yet */}
-                          {sale.status === 'DELIVERED' &&
-                            sale.paymentStatus === 'NOT_RECEIVED' &&
-                            sale.courierPayout == null &&
-                            /^[A-Z]{2}\d{10}$/i.test((sale.trackingNumber || '').trim()) && (
-                              <div className="mt-1 text-[10px] leading-snug text-slate-400" title="Press Check Leopards (or wait for the daily check at 6 pm)">
-                                Money: not checked yet
-                              </div>
-                            )}
+                          {leopardsCell}
                         </td>
+                        )}
 
                         {/* Payment: source → person, received or not */}
                         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
@@ -1172,13 +1232,15 @@ export default function OrderList({
                             {sale.receivedBy?.name && <span className="text-slate-400"> → <b className="text-slate-600">{sale.receivedBy.name}</b></span>}
                           </div>
                           <PaymentBadge status={sale.paymentStatus} onClick={() => togglePayment(g)} />
+                          {compact && <div className="mt-2 border-t border-slate-200/70 pt-1.5">{supplierCell}</div>}
                         </td>
 
                         {/* Supplier + its payment */}
+                        {!compact && (
                         <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <div className="text-[11px] text-slate-600 mb-1 truncate">{g.supplierNames.join(', ') || <span className="text-slate-300">—</span>}</div>
-                          <GroupSupplierBadge g={g} onClick={() => toggleSupplier(g)} />
+                          {supplierCell}
                         </td>
+                        )}
 
                         {/* Actions */}
                         <td className="pr-3 pl-1 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>

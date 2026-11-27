@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Search, Package, MapPin, CheckCircle2, Clock, Banknote, SlidersHorizontal, ChevronDown, Camera, Pencil, Phone, X } from 'lucide-react'
 import StatusBadge from './ui/StatusBadge'
 import CopyRef from './ui/CopyRef'
+import Hl from './ui/Highlight'
 import { CustomerReplyBadge, WhatsAppMsgStatus, BillStatus, CustomerResponse, WhatsAppMsg } from './ui/WhatsAppStatus'
 import { WhatsAppChatButton } from './WhatsAppChat'
 import ReturnReceivedToggle from './ui/ReturnReceivedToggle'
@@ -132,10 +133,23 @@ interface Option {
   name: string
 }
 
+export interface ListTotals {
+  orders: number
+  items: number
+  sale: number
+  profit: number
+}
+
 interface OrderListProps {
   sales: Sale[]
   // Orders per status tab with the other filters applied ({ ALL, PACKING, … }); null while unknown
   statusCounts?: Record<string, number> | null
+  // Totals of the whole list as filtered (also the months not loaded yet); null while unknown
+  totals?: ListTotals | null
+  // Month-by-month loading: older months left / the next one is loading / load it
+  hasMore?: boolean
+  isLoadingMore?: boolean
+  onLoadMore?: () => void
   isLoading?: boolean
   searchQuery: string
   setSearchQuery: (q: string) => void
@@ -333,11 +347,21 @@ function OrderThumb({ sale, size = 64 }: { sale: Sale; size?: number }) {
 }
 
 const dateLabel = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+// Month of an order in Pakistan time (UTC+5), e.g. "2026-11" and "November 2026"
+const PKT = 5 * 60 * 60 * 1000
+const monthKey = (iso: string) => new Date(new Date(iso).getTime() + PKT).toISOString().slice(0, 7)
+const monthName = (key: string) =>
+  new Date(`${key}-15T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 export default function OrderList({
   sales,
   statusCounts,
+  totals,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
   isLoading,
   searchQuery,
   setSearchQuery,
@@ -400,11 +424,42 @@ export default function OrderList({
   // Count in the list on screen (after tabs / filters / search), counted down: the newest order gets the
   // highest number and the oldest is 1, so a new order does not change the others' numbers.
   // (Orders come newest first; if that ever flips, the oldest still gets 1.)
+  // The highest number is the whole list's count (from the server), so it stays right while only the
+  // newest months are loaded.
+  const totalOrders = totals && totals.orders >= groups.length ? totals.orders : groups.length
   const countOf = useMemo(() => {
     const t = (g: OrderGroup) => new Date(g.lead.createdAt as any).getTime() || 0
     const newestFirst = groups.length < 2 || t(groups[0]) >= t(groups[groups.length - 1])
-    return (index: number) => (newestFirst ? groups.length - index : index + 1)
+    return (index: number) => (newestFirst ? totalOrders - index : index + 1)
+  }, [groups, totalOrders])
+
+  // Month bands: where each month starts in the list, and how many orders it has (all loaded)
+  const monthBands = useMemo(() => {
+    const starts = new Map<number, { key: string; count: number }>()
+    let last = ''
+    groups.forEach((g, i) => {
+      const k = monthKey(g.lead.createdAt as any)
+      if (k !== last) {
+        starts.set(i, { key: k, count: 0 })
+        last = k
+      }
+      const band = Array.from(starts.values()).pop()!
+      band.count += 1
+    })
+    return starts
   }, [groups])
+
+  // Bottom of the list on screen → load the next older month
+  const moreRef = useRef<HTMLDivElement | null>(null)
+  const loadMoreRef = useRef(onLoadMore)
+  loadMoreRef.current = onLoadMore
+  useEffect(() => {
+    const el = moreRef.current
+    if (!el || !hasMore) return
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && loadMoreRef.current?.(), { rootMargin: '400px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore, groups.length])
 
   const toggleGroup = (g: OrderGroup) =>
     setSelectedIds((prev) =>
@@ -417,8 +472,9 @@ export default function OrderList({
 
   const toggleSupplier = (g: OrderGroup) => onSetSupplierPayment(g.ids, g.supplierPending > 0 ? 'PAID' : 'PENDING')
 
-  const groupTitle = (g: OrderGroup) =>
-    g.items.length === 1 ? g.lead.productName : g.items.map((i) => i.productName).join(', ')
+  const groupTitle = (g: OrderGroup) => (
+    <Hl text={g.items.length === 1 ? g.lead.productName : g.items.map((i) => i.productName).join(', ')} q={searchQuery} />
+  )
 
   const runBulk = async (action: () => Promise<void>) => {
     setIsBulkUpdating(true)
@@ -465,13 +521,19 @@ export default function OrderList({
       <div className="flex items-center gap-1 text-[11px] text-slate-500 min-w-0">
         <MapPin className="h-3 w-3 text-emerald-500 shrink-0" />
         <span className="truncate">
-          {sale.customerName}
-          {sale.city !== 'General' ? `, ${sale.city}` : ''}
+          <Hl text={sale.customerName} q={searchQuery} />
+          {sale.city !== 'General' ? (
+            <>
+              , <Hl text={sale.city} q={searchQuery} />
+            </>
+          ) : (
+            ''
+          )}
         </span>
         {sale.customerPhone && (
           <span className="flex items-center gap-0.5 shrink-0 text-slate-400">
             <Phone className="h-3 w-3" />
-            {sale.customerPhone}
+            <Hl text={sale.customerPhone} q={searchQuery.replace(/[\s-]/g, '')} />
             {/* copy the number (only the button: the number is already shown) */}
             <CopyRef label="" value={sale.customerPhone} className="[&>span:nth-child(2)]:hidden" />
           </span>
@@ -480,10 +542,11 @@ export default function OrderList({
     ) : null
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+    // Large screens: the card fills the screen; the top bar and the column headings stay put, only the orders scroll
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm lg:flex lg:flex-col lg:h-[calc(100dvh-6.75rem)]">
 
       {/* ── Top bar: status tabs · search · filters ── */}
-      <div className="p-3 sm:p-4 border-b border-slate-100 space-y-3">
+      <div className="p-3 sm:p-4 border-b border-slate-100 space-y-3 lg:shrink-0">
         <div className="flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex flex-wrap items-center gap-1 bg-slate-100 rounded-xl p-1">
             {statusTabs.map((tab) => (
@@ -675,7 +738,7 @@ export default function OrderList({
 
       {/* ── Bulk action bar ── */}
       {selectedIds.length > 0 && (
-        <div className="sticky bottom-3 z-20 lg:static mx-3 sm:mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl px-3 sm:px-4 py-2.5 text-xs shadow-lg lg:shadow-none">
+        <div className="sticky bottom-3 z-20 lg:static lg:shrink-0 mx-3 sm:mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-xl px-3 sm:px-4 py-2.5 text-xs shadow-lg lg:shadow-none">
           <span className="text-emerald-700 font-semibold">
             {groups.filter((g) => g.ids.some((id) => selectedIds.includes(id))).length} order(s) selected · to receive {formatPKR(selectedToReceive)} · owed to supplier{' '}
             {formatPKR(selectedOwedToSupplier)}
@@ -702,8 +765,8 @@ export default function OrderList({
         </div>
       )}
 
-      {/* ── Orders ── */}
-      <div className="p-3 sm:p-4">
+      {/* ── Orders (the only part that scrolls on large screens) ── */}
+      <div className="p-3 sm:p-4 lg:flex-1 lg:min-h-0 lg:overflow-auto lg:pt-0">
         {isLoading ? (
           <div className="space-y-2">
             {[...Array(5)].map((_, i) => (
@@ -736,15 +799,24 @@ export default function OrderList({
                   onChange={() => setSelectedIds(allSelected ? [] : sales.map((s) => s.id))}
                   className="h-4 w-4 accent-emerald-500 rounded"
                 />
-                Select all ({groups.length})
+                Select all ({groups.length}{hasMore ? ' loaded' : ''})
               </label>
 
               {groups.map((g, index) => {
                 const sale = g.lead
                 const isSelected = g.ids.every((id) => selectedIds.includes(id))
+                const band = monthBands.get(index)
                 return (
+                  <React.Fragment key={g.key}>
+                  {band && (
+                    <div className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white">
+                      <span>{monthName(band.key)}</span>
+                      <span className="font-mono font-semibold text-slate-300">
+                        {band.count} order{band.count !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
                   <div
-                    key={g.key}
                     onClick={() => onSelectOrder(sale)}
                     className={`rounded-2xl border p-3 space-y-2.5 transition cursor-pointer ${
                       isSelected ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-white hover:border-slate-300'
@@ -768,7 +840,11 @@ export default function OrderList({
                           <span>
                             {dateLabel(sale.createdAt)} · {timeLabel(sale.createdAt)}
                           </span>
-                          {sale.orderNo && <span className="font-mono font-bold text-slate-400">#{sale.orderNo}</span>}
+                          {sale.orderNo && (
+                            <span className="font-mono font-bold text-slate-400">
+                              #<Hl text={sale.orderNo} q={/^#?\d+$/.test(searchQuery.trim()) ? searchQuery : ''} />
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="font-semibold text-[13px] text-slate-900 leading-snug break-words">
@@ -794,8 +870,8 @@ export default function OrderList({
                         </div>
                         {(sale.externalOrderId || sale.trackingNumber) && (
                           <div className="flex flex-wrap gap-x-2" onClick={(e) => e.stopPropagation()}>
-                            {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
-                            {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track />}
+                            {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} highlight={searchQuery} />}
+                            {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track highlight={searchQuery} />}
                             <CourierBadge status={sale.courierStatus} code={sale.courierStatusCode} reason={sale.courierReason} at={sale.courierStatusAt} />
                           </div>
                         )}
@@ -877,12 +953,13 @@ export default function OrderList({
                       </div>
                     </div>
                   </div>
+                  </React.Fragment>
                 )
               })}
             </div>
 
             {/* ── Desktop: table (photo · date · order · amount · status · payment · supplier) ── */}
-            <div className="hidden lg:block overflow-x-auto rounded-xl border border-slate-200">
+            <div className="hidden lg:block rounded-xl border border-slate-200 lg:mt-3">
               <table className="w-full min-w-[1180px] table-fixed text-left text-xs text-slate-700">
                 {/* fixed widths keep the right-side columns compact so Edit stays visible without scrolling */}
                 <colgroup>
@@ -898,7 +975,7 @@ export default function OrderList({
                   <col className="w-[100px]" />
                   <col className="w-[48px]" />
                 </colgroup>
-                <thead>
+                <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-50 text-[10px] text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
                     <th className="pl-3 py-2.5">
                       <input
@@ -927,9 +1004,20 @@ export default function OrderList({
                     const isSelected = g.ids.every((id) => selectedIds.includes(id))
                     // Striped rows: every second order is light grey so rows are easy to tell apart
                     const stripe = rowIndex % 2 === 1 ? 'bg-slate-100/80' : 'bg-white'
+                    const band = monthBands.get(rowIndex)
                     return (
+                      <React.Fragment key={g.key}>
+                      {band && (
+                        <tr className="bg-slate-800 text-white">
+                          <td colSpan={11} className="px-3 py-1.5 text-[11px] font-bold">
+                            {monthName(band.key)}
+                            <span className="ml-2 font-mono font-semibold text-slate-300">
+                              · {band.count} order{band.count !== 1 ? 's' : ''}
+                            </span>
+                          </td>
+                        </tr>
+                      )}
                       <tr
-                        key={g.key}
                         onClick={() => onSelectOrder(sale)}
                         className={`cursor-pointer border-b border-slate-200 last:border-b-0 group/row transition-colors ${
                           isSelected ? 'bg-emerald-50 hover:bg-emerald-100/70' : `${stripe} hover:bg-sky-50`
@@ -958,7 +1046,11 @@ export default function OrderList({
                         {/* Order details */}
                         <td className="px-3 py-2.5 min-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            {sale.orderNo && <span className="text-[11px] font-bold text-slate-400 font-mono shrink-0">#{sale.orderNo}</span>}
+                            {sale.orderNo && (
+                              <span className="text-[11px] font-bold text-slate-400 font-mono shrink-0">
+                                #<Hl text={sale.orderNo} q={/^#?\d+$/.test(searchQuery.trim()) ? searchQuery : ''} />
+                              </span>
+                            )}
                             {g.items.length > 1 && (
                               <span className="px-1.5 py-px rounded-md bg-slate-800 text-white text-[10px] font-bold shrink-0">{g.items.length} items</span>
                             )}
@@ -984,8 +1076,8 @@ export default function OrderList({
                           </div>
                           {(sale.externalOrderId || sale.trackingNumber) && (
                             <div className="flex flex-wrap gap-x-3 mt-0.5" onClick={(e) => e.stopPropagation()}>
-                              {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} />}
-                              {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track />}
+                              {sale.externalOrderId && <CopyRef label={sale.orderSource?.name || 'Order ID'} value={sale.externalOrderId} highlight={searchQuery} />}
+                              {sale.trackingNumber && <CopyRef label="TRK" value={sale.trackingNumber} track highlight={searchQuery} />}
                             </div>
                           )}
                           <div className="mt-0.5">{customerLine(sale)}</div>
@@ -1103,23 +1195,42 @@ export default function OrderList({
                           </div>
                         </td>
                       </tr>
+                      </React.Fragment>
                     )
                   })}
                 </tbody>
               </table>
             </div>
 
+            {/* Older months: loaded when this comes into view */}
+            {(hasMore || isLoadingMore) && (
+              <div ref={moreRef} className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => onLoadMore?.()}
+                  disabled={isLoadingMore}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {isLoadingMore ? 'Loading the older month…' : 'Load the older month'}
+                </button>
+              </div>
+            )}
+            {!hasMore && !isLoadingMore && totals && groups.length > 0 && (
+              <p className="mt-3 text-center text-[11px] text-slate-400">All {totals.orders} orders are shown.</p>
+            )}
+
             {/* Summary */}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 px-1">
               <span>
-                {groups.length} order{groups.length !== 1 ? 's' : ''} · {sales.length} item{sales.length !== 1 ? 's' : ''}
+                {totalOrders} order{totalOrders !== 1 ? 's' : ''} · {totals?.items ?? sales.length} item{(totals?.items ?? sales.length) !== 1 ? 's' : ''}
+                {hasMore && <span className="text-slate-400"> · {groups.length} loaded</span>}
               </span>
               <span className="font-mono font-semibold">
-                Total: <span className="text-slate-900">{formatPKR(groups.reduce((a, g) => a + g.saleTotal, 0))}</span>
+                Total: <span className="text-slate-900">{formatPKR(totals?.sale ?? groups.reduce((a, g) => a + g.saleTotal, 0))}</span>
                 {' · '}
                 Profit:{' '}
-                <span className={groups.reduce((a, g) => a + g.profit, 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                  {formatPKR(groups.reduce((a, g) => a + g.profit, 0))}
+                <span className={(totals?.profit ?? groups.reduce((a, g) => a + g.profit, 0)) >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                  {formatPKR(totals?.profit ?? groups.reduce((a, g) => a + g.profit, 0))}
                 </span>
               </span>
             </div>

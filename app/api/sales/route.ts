@@ -12,13 +12,46 @@ import { resolveSupplierPayer } from '@/lib/supplierPayer'
 
 export const dynamic = 'force-dynamic'
 
+// Month pages for the orders list (Pakistan time, UTC+5, no daylight saving)
+const PKT = 5 * 60 * 60 * 1000
+const monthStart = (d: Date) => {
+  const k = new Date(d.getTime() + PKT)
+  return new Date(Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), 1) - PKT)
+}
+
+// GET → the orders list (an array), with every filter of the list.
+// Paged (?paged=1) → { sales, cursor, hasMore }: one month at a time, newest first.
+//   no before/since  the newest month that has orders
+//   before=<iso>     the next older month that has orders (empty months are skipped)
+//   since=<iso>      everything from <iso> to now (reload the months already on screen)
+//   A search is never paged: it looks in every month at once.
+//   cursor = start of the oldest month returned (pass it as before= for the next page)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const where = salesWhere(searchParams)
+    const paged = searchParams.get('paged') === '1' && !(searchParams.get('search') || '').trim()
+
+    let window: { gte?: Date; lt?: Date } | null = null
+    if (paged) {
+      const since = searchParams.get('since')
+      const before = searchParams.get('before')
+      if (since && !isNaN(Date.parse(since))) {
+        window = { gte: new Date(since) }
+      } else {
+        const lt = before && !isNaN(Date.parse(before)) ? new Date(before) : undefined
+        const newest = await prisma.sale.findFirst({
+          where: lt ? { AND: [where, { createdAt: { lt } }] } : where,
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        })
+        if (!newest) return NextResponse.json({ sales: [], cursor: before || null, hasMore: false })
+        window = { gte: monthStart(newest.createdAt), ...(lt ? { lt } : {}) }
+      }
+    }
 
     const sales = await prisma.sale.findMany({
-      where,
+      where: window ? { AND: [where, { createdAt: window }] } : where,
       orderBy: { createdAt: 'desc' },
       include: { product: true, category: true, supplier: true, paymentSource: true, orderSource: true, receivedBy: true, dcPaidBy: true },
     })
@@ -59,14 +92,20 @@ export async function GET(request: NextRequest) {
       console.error('WhatsApp statuses unavailable:', err)
     }
 
-    return NextResponse.json(sales.map(({ courierSlipUrl, ...s }) => ({
+    const list = sales.map(({ courierSlipUrl, ...s }) => ({
       ...s,
       // the Leopards slip link stays on the server (/api/sales/[id]/leopards/slip)
       hasLeopardsSlip: Boolean(courierSlipUrl),
       imageCount: (s.orderNo != null && countByOrder.get(s.orderNo)) || 0,
       imageUrl: (s.orderNo != null && thumbByOrder.get(s.orderNo)) || null,
       whatsapp: (s.orderNo != null && waByOrder.get(s.orderNo)) || [],
-    })))
+    }))
+    if (!paged) return NextResponse.json(list)
+
+    // older orders left below this page?
+    const cursor = window?.gte ?? null
+    const older = cursor ? await prisma.sale.findFirst({ where: { AND: [where, { createdAt: { lt: cursor } }] }, select: { id: true } }) : null
+    return NextResponse.json({ sales: list, cursor: cursor ? cursor.toISOString() : null, hasMore: Boolean(older) })
   } catch (error: any) {
     console.error('Fetch sales error:', error)
     return NextResponse.json({ error: error.message || 'Failed to fetch sales' }, { status: 500 })

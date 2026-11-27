@@ -9,20 +9,34 @@ const STATUSES = ['PACKING', 'DISPATCHED', 'DELIVERED', 'RETURNED', 'CANCELLED']
 
 // How many orders each status tab holds, with all the other filters of the orders list applied
 // (same query string as GET /api/sales). A parcel with several products counts as one order.
+// totals: { orders, items, sale, profit } of the list as filtered now (status tab included).
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const rows = await prisma.sale.findMany({
-      where: salesWhere(searchParams, { ignoreStatus: true }),
-      select: { id: true, parcelId: true, status: true, reviewStatus: true },
-    })
+    const [rows, listRows] = await Promise.all([
+      prisma.sale.findMany({
+        where: salesWhere(searchParams, { ignoreStatus: true }),
+        select: { id: true, parcelId: true, status: true, reviewStatus: true },
+      }),
+      // the list itself (status tab too): totals for the whole list, even when only some months are loaded
+      prisma.sale.findMany({
+        where: salesWhere(searchParams),
+        select: { id: true, parcelId: true, soldPrice: true, quantity: true, profit: true },
+      }),
+    ])
     const counts: Record<string, number> = { ALL: countOrders(rows) }
     for (const s of STATUSES) counts[s] = countOrders(rows.filter((r) => r.status === s))
     // "Reviews" tab: delivered, review not got yet
     counts.REVIEWS = countOrders(
       rows.filter((r) => r.status === 'DELIVERED' && (r.reviewStatus === 'PENDING' || r.reviewStatus === 'CALLED'))
     )
-    return NextResponse.json(counts)
+    const totals = {
+      orders: countOrders(listRows),
+      items: listRows.length,
+      sale: Math.round(listRows.reduce((a, r) => a + r.soldPrice * r.quantity, 0) * 100) / 100,
+      profit: Math.round(listRows.reduce((a, r) => a + r.profit, 0) * 100) / 100,
+    }
+    return NextResponse.json({ ...counts, totals })
   } catch (error: any) {
     console.error('Order counts error:', error)
     return NextResponse.json({ error: error.message || 'Could not count orders' }, { status: 500 })

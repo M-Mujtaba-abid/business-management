@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { Copy, Check, ExternalLink } from 'lucide-react'
 import { isLeopardsCN, normalizeCN } from '@/lib/leopards'
+import Hl from './Highlight'
 
 interface CopyRefProps {
   label: string // e.g. "Daraz", "TRK"
@@ -10,10 +11,12 @@ interface CopyRefProps {
   className?: string
   // Tracking number: also show a button that opens the same tracking page the customer gets (Leopards only)
   track?: boolean
+  // search text: the matching part is shown in green
+  highlight?: string
 }
 
 // A reference number (order ID / tracking) with a one-tap copy button, e.g. to paste on the courier site
-export default function CopyRef({ label, value, className = '', track = false }: CopyRefProps) {
+export default function CopyRef({ label, value, className = '', track = false, highlight = '' }: CopyRefProps) {
   const [copied, setCopied] = useState(false)
 
   const copy = async (e: React.MouseEvent) => {
@@ -30,7 +33,9 @@ export default function CopyRef({ label, value, className = '', track = false }:
   return (
     <span className={`inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 ${className}`}>
       <span className="text-slate-400 font-sans">{label}</span>
-      <span className="truncate max-w-[140px]">{value}</span>
+      <span className="truncate max-w-[140px]">
+        <Hl text={value} q={highlight} />
+      </span>
       <button
         type="button"
         onClick={copy}

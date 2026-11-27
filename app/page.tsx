@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, MutableRefObject } f
 import AppShell from '@/components/ui/AppShell'
 import { NavSection, NAV_SECTIONS } from '@/components/ui/Sidebar'
 import DashboardStats from '@/components/DashboardStats'
-import OrderList, { Sale, OrderFilters, EMPTY_ORDER_FILTERS } from '@/components/OrderList'
+import OrderList, { Sale, OrderFilters, EMPTY_ORDER_FILTERS, ListTotals } from '@/components/OrderList'
 import OrderDetailsDrawer from '@/components/ui/OrderDetailsDrawer'
 /* OLD INVENTORY FLOW — uncomment to restore
 import NewDispatchWizard from '@/components/ui/NewDispatchWizard'
@@ -65,6 +65,14 @@ export default function Home() {
   const [sales, setSales] = useState<Sale[]>([])
   // Orders per status tab for the current filters, e.g. { ALL: 120, PACKING: 8, … }
   const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null)
+  // Totals of the whole list as filtered (even when only some months are loaded)
+  const [listTotals, setListTotals] = useState<ListTotals | null>(null)
+  // Month-by-month loading: whether older orders are left, and the next older month is on its way
+  const [salesHasMore, setSalesHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const salesQueryRef = useRef('') // filters of the list on screen
+  const salesCursorRef = useRef<string | null>(null) // start of the oldest month loaded
+  const salesRequestRef = useRef(0) // the newest request wins
   const [lowStockCount] = useState<number>(0) // OLD INVENTORY FLOW: was [lowStockCount, setLowStockCount]
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -122,45 +130,99 @@ export default function Home() {
     }
   }, [dateRange, startDate, endDate])
 
-  // Fetch Sales List
+  // The orders list query (every filter), without the month paging
+  const salesQuery = useMemo(() => {
+    let url = `range=${dateRange}&status=${statusFilter}`
+    if (startDate) url += `&startDate=${startDate}`
+    if (endDate) url += `&endDate=${endDate}`
+    if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`
+    if (orderFilters.categoryId) url += `&categoryId=${orderFilters.categoryId}`
+    if (orderFilters.supplierId) url += `&supplierId=${orderFilters.supplierId}`
+    if (orderFilters.supplierPayment) url += `&supplierPayment=${orderFilters.supplierPayment}`
+    if (orderFilters.olderThanDays) url += `&olderThanDays=${orderFilters.olderThanDays}`
+    if (orderFilters.missingRef) url += `&missingRef=1`
+    if (orderFilters.receivedById) url += `&receivedById=${orderFilters.receivedById}`
+    if (orderFilters.orderSourceId) url += `&orderSourceId=${orderFilters.orderSourceId}`
+    if (orderFilters.paymentSourceId) url += `&paymentSourceId=${orderFilters.paymentSourceId}`
+    if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
+    if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
+    if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
+    if (orderFilters.reviewStatus) url += `&reviewStatus=${orderFilters.reviewStatus}`
+    if (orderFilters.attention) url += `&attention=${orderFilters.attention}`
+    return url
+  }, [dateRange, statusFilter, searchQuery, startDate, endDate, orderFilters])
+
+  // Fetch Sales List, one month at a time (newest first; scrolling down loads the older months).
+  // Same filters as on screen → reload the months already shown (keeps the scroll place);
+  // new filters → start again from the newest month.
   const fetchSales = useCallback(async () => {
-    setIsSalesLoading(true)
+    const query = salesQuery
+    const keep = query === salesQueryRef.current && !!salesCursorRef.current
+    const request = ++salesRequestRef.current
+    if (!keep) setIsSalesLoading(true)
     try {
-      let url = `/api/sales?range=${dateRange}&status=${statusFilter}`
-      if (startDate) url += `&startDate=${startDate}`
-      if (endDate) url += `&endDate=${endDate}`
-      if (searchQuery) {
-        url += `&search=${encodeURIComponent(searchQuery)}`
-      }
-      if (orderFilters.categoryId) url += `&categoryId=${orderFilters.categoryId}`
-      if (orderFilters.supplierId) url += `&supplierId=${orderFilters.supplierId}`
-      if (orderFilters.supplierPayment) url += `&supplierPayment=${orderFilters.supplierPayment}`
-      if (orderFilters.olderThanDays) url += `&olderThanDays=${orderFilters.olderThanDays}`
-      if (orderFilters.missingRef) url += `&missingRef=1`
-      if (orderFilters.receivedById) url += `&receivedById=${orderFilters.receivedById}`
-      if (orderFilters.orderSourceId) url += `&orderSourceId=${orderFilters.orderSourceId}`
-      if (orderFilters.paymentSourceId) url += `&paymentSourceId=${orderFilters.paymentSourceId}`
-      if (orderFilters.paymentStatus) url += `&paymentStatus=${orderFilters.paymentStatus}`
-      if (orderFilters.customerResponse) url += `&customerResponse=${orderFilters.customerResponse}`
-      if (orderFilters.returnState) url += `&returnState=${orderFilters.returnState}`
-      if (orderFilters.reviewStatus) url += `&reviewStatus=${orderFilters.reviewStatus}`
-      if (orderFilters.attention) url += `&attention=${orderFilters.attention}`
+      const page = keep ? `&paged=1&since=${encodeURIComponent(salesCursorRef.current as string)}` : '&paged=1'
       // The numbers on the status tabs come with the same filters (all but the status itself)
       const [res, countsRes] = await Promise.all([
-        fetch(url),
-        fetch(url.replace('/api/sales?', '/api/sales/counts?')).catch(() => null),
+        fetch(`/api/sales?${query}${page}`),
+        fetch(`/api/sales/counts?${query}`).catch(() => null),
       ])
+      if (request !== salesRequestRef.current) return // a newer request is on its way
       if (res.ok) {
         const data = await res.json()
-        setSales(data)
+        salesQueryRef.current = query
+        if (Array.isArray(data)) {
+          // not paged (a search): everything at once
+          salesCursorRef.current = null
+          setSales(data)
+          setSalesHasMore(false)
+        } else {
+          salesCursorRef.current = data.cursor
+          setSales(data.sales)
+          setSalesHasMore(Boolean(data.hasMore))
+        }
       }
-      setStatusCounts(countsRes?.ok ? await countsRes.json() : null)
+      const counts = countsRes?.ok ? await countsRes.json() : null
+      if (request !== salesRequestRef.current) return
+      if (counts) {
+        const { totals, ...byStatus } = counts
+        setStatusCounts(byStatus)
+        setListTotals(totals || null)
+      } else {
+        setStatusCounts(null)
+        setListTotals(null)
+      }
     } catch (err) {
       console.error('Failed to fetch sales:', err)
     } finally {
-      setIsSalesLoading(false)
+      if (request === salesRequestRef.current) setIsSalesLoading(false)
     }
-  }, [dateRange, statusFilter, searchQuery, startDate, endDate, orderFilters])
+  }, [salesQuery])
+
+  // Scrolled to the bottom: load the next older month
+  const loadOlderSales = useCallback(async () => {
+    if (!salesHasMore || isLoadingMore || !salesCursorRef.current) return
+    const query = salesQueryRef.current
+    const request = salesRequestRef.current
+    setIsLoadingMore(true)
+    try {
+      const res = await fetch(`/api/sales?${query}&paged=1&before=${encodeURIComponent(salesCursorRef.current)}`)
+      // the filters changed (or the list reloaded) meanwhile: drop this page
+      if (!res.ok || request !== salesRequestRef.current || query !== salesQueryRef.current) return
+      const data = await res.json()
+      if (Array.isArray(data)) return
+      salesCursorRef.current = data.cursor
+      setSales((prev) => {
+        const have = new Set(prev.map((x) => x.id))
+        return [...prev, ...data.sales.filter((x: Sale) => !have.has(x.id))]
+      })
+      setSalesHasMore(Boolean(data.hasMore))
+    } catch (err) {
+      console.error('Failed to load older orders:', err)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [salesHasMore, isLoadingMore])
 
   // Live WhatsApp state: while a message is on its way (every 5s) or a customer's reply is awaited
   // (every 30s), refresh only those orders' WhatsApp info in the background, without reloading the list.
@@ -433,6 +495,10 @@ export default function Home() {
         <OrderList
           sales={sales}
           statusCounts={statusCounts}
+          totals={listTotals}
+          hasMore={salesHasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={loadOlderSales}
           isLoading={isSalesLoading}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}

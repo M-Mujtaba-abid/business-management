@@ -335,12 +335,12 @@ export default function AppShell({
               </button>
 
               {/* Inline date filter on wide screens */}
-              <div className="hidden xl:block">{dateFilter}</div>
+              <div className="hidden 2xl:block">{dateFilter}</div>
 
               {/* Date filter toggle on phones / tablets */}
               <button
                 onClick={() => setIsFilterOpen((o) => !o)}
-                className={`xl:hidden flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition ${
+                className={`2xl:hidden flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-semibold transition ${
                   isFilterOpen || !isAllTime
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                     : 'bg-white border-slate-200 text-slate-600'
@@ -357,7 +357,7 @@ export default function AppShell({
 
           {/* Date filter panel on phones / tablets */}
           {isFilterOpen && (
-            <div className="xl:hidden border-t border-slate-100 px-3 sm:px-6 py-3 bg-white">{dateFilter}</div>
+            <div className="2xl:hidden border-t border-slate-100 px-3 sm:px-6 py-3 bg-white">{dateFilter}</div>
           )}
         </header>
 

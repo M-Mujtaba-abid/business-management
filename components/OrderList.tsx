@@ -397,6 +397,14 @@ export default function OrderList({
 
   // A parcel is one row: it is selected, paid and received as a whole
   const groups = useMemo(() => groupSales(sales), [sales])
+  // Count in the list on screen (after tabs / filters / search), counted down: the newest order gets the
+  // highest number and the oldest is 1, so a new order does not change the others' numbers.
+  // (Orders come newest first; if that ever flips, the oldest still gets 1.)
+  const countOf = useMemo(() => {
+    const t = (g: OrderGroup) => new Date(g.lead.createdAt as any).getTime() || 0
+    const newestFirst = groups.length < 2 || t(groups[0]) >= t(groups[groups.length - 1])
+    return (index: number) => (newestFirst ? groups.length - index : index + 1)
+  }, [groups])
 
   const toggleGroup = (g: OrderGroup) =>
     setSelectedIds((prev) =>
@@ -439,11 +447,14 @@ export default function OrderList({
     { label: 'Cancelled', value: 'CANCELLED', dot: 'bg-slate-400' },
   ]
 
-  // Profit is only real once delivered / returned; before that show what the cover cost
+  // Profit is only real once delivered / returned (shown with the cost); before that show what the cover cost
   const amountNote = (g: OrderGroup) =>
     g.lead.status === 'DELIVERED' || g.lead.status === 'RETURNED' ? (
-      <span className={g.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-        Profit {g.profit >= 0 ? '+' : ''}{formatPKR(g.profit)}
+      <span className="block leading-tight">
+        <span className="block text-slate-400">Cost {formatPKR(g.costTotal)}</span>
+        <span className={`block ${g.profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+          Profit {g.profit >= 0 ? '+' : ''}{formatPKR(g.profit)}
+        </span>
       </span>
     ) : (
       <span className="text-slate-400">Cost {formatPKR(g.costTotal)}</span>
@@ -461,6 +472,8 @@ export default function OrderList({
           <span className="flex items-center gap-0.5 shrink-0 text-slate-400">
             <Phone className="h-3 w-3" />
             {sale.customerPhone}
+            {/* copy the number (only the button: the number is already shown) */}
+            <CopyRef label="" value={sale.customerPhone} className="[&>span:nth-child(2)]:hidden" />
           </span>
         )}
       </div>
@@ -726,7 +739,7 @@ export default function OrderList({
                 Select all ({groups.length})
               </label>
 
-              {groups.map((g) => {
+              {groups.map((g, index) => {
                 const sale = g.lead
                 const isSelected = g.ids.every((id) => selectedIds.includes(id))
                 return (
@@ -738,13 +751,16 @@ export default function OrderList({
                     }`}
                   >
                     <div className="flex gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => toggleGroup(g)}
-                        className="h-4 w-4 mt-1 accent-emerald-500 shrink-0 rounded"
-                      />
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleGroup(g)}
+                          className="h-4 w-4 mt-1 accent-emerald-500 rounded"
+                        />
+                        <span className="font-mono text-[10px] font-bold text-slate-400" title="Count in this list">{countOf(index)}</span>
+                      </div>
                       <OrderThumb sale={sale} size={64} />
                       <div className="min-w-0 flex-1 space-y-0.5">
                         {/* date first, then the order */}
@@ -920,7 +936,10 @@ export default function OrderList({
                         }`}
                       >
                         <td className="pl-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={isSelected} onChange={() => toggleGroup(g)} className="h-3.5 w-3.5 accent-emerald-500 rounded" />
+                          <div className="flex flex-col items-center gap-1">
+                            <input type="checkbox" checked={isSelected} onChange={() => toggleGroup(g)} className="h-3.5 w-3.5 accent-emerald-500 rounded" />
+                            <span className="font-mono text-[12px] font-bold text-black" title="Count in this list">{countOf(rowIndex)}</span>
+                          </div>
                         </td>
 
                         {/* Photo (hover = big preview) */}
